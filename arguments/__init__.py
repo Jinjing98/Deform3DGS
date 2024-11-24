@@ -57,6 +57,9 @@ class ModelParams(ParamGroup):
         self.render_process=False
         self.extra_mark = None
         self.camera_extent = None
+
+        #extend
+        self.tool_mask = None
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):

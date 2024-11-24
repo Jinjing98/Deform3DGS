@@ -93,7 +93,9 @@ class EndoNeRF_Dataset(object):
         self,
         datadir,
         downsample=1.0,
-        test_every=8
+        test_every=8,
+        tool_mask = 'use',
+
     ):
         self.img_wh = (
             int(640 / downsample),
@@ -114,7 +116,9 @@ class EndoNeRF_Dataset(object):
         self.video_idxs = [i for i in range(n_frames)]
         
         self.maxtime = 1.0
-        
+        #extend
+        self.tool_mask = tool_mask
+
     def load_meta(self):
         """
         Load meta data from the dataset.
@@ -198,6 +202,17 @@ class EndoNeRF_Dataset(object):
                     mask = (mask[..., 0]>0).astype(np.uint8)
             else:
                 mask = 1 - np.array(mask) / 255.0
+
+            # here adjust mask....
+            if self.tool_mask == 'use':
+                mask = 1 - np.array(mask) / 255.0
+            elif self.tool_mask == 'inverse':
+                mask = np.array(mask) / 255.0
+            elif self.tool_mask == 'nouse':
+                mask = np.ones_like(mask)
+            else:
+                assert 0
+
             depth_path = self.depth_paths[idx]
             depth = np.array(Image.open(depth_path))
             close_depth = np.percentile(depth[depth!=0], 3.0)

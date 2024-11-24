@@ -39,7 +39,9 @@ class Scene:
             print("Loading trained model at iteration {}".format(self.loaded_iter))
         
         if os.path.exists(os.path.join(args.source_path, "poses_bounds.npy")) and args.extra_mark == 'endonerf':
-            scene_info = sceneLoadTypeCallbacks["endonerf"](args.source_path)
+            scene_info = sceneLoadTypeCallbacks["endonerf"](args.source_path,
+                                                            tool_mask=args.tool_mask,
+                                                            )
             print("Found poses_bounds.py and extra marks with EndoNeRf")
         elif os.path.exists(os.path.join(args.source_path, "point_cloud.obj")) or os.path.exists(os.path.join(args.source_path, "left_point_cloud.obj")):
             scene_info = sceneLoadTypeCallbacks["scared"](args.source_path, args.white_background, args.eval)

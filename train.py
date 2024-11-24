@@ -256,6 +256,10 @@ if __name__ == "__main__":
         from utils.params_utils import merge_hparams
         config = mmcv.Config.fromfile(args.configs)
         args = merge_hparams(args, config)
+        #update with tool_info automatically
+        if hasattr(args,'tool_mask'):
+            setattr(args, 'expname', f'{args.expname}_{args.tool_mask}')
+
     print("Optimizing " + args.model_path)
 
     # Initialize system state (RNG)
