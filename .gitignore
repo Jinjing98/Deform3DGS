@@ -1,0 +1,24 @@
+*.pyc
+.vscode
+output
+build
+diff_rasterization/diff_rast.egg-info
+diff_rasterization/dist
+tensorboard_3d
+screenshots
+data/
+data
+submodules/
+
+# toy_data/
+# */__pycache__/*
+# arguments/__pycache__/
+# **/__pycache__/
+# # Ignore all __pycache__ directories
+# __pycache__/
+
+# # Ignore Python bytecode files
+# *.pyc
+
+
+

@@ -22,12 +22,23 @@ def render_flow(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Ten
     Background tensor (bg_color) must be on GPU!
     """
  
+    # # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
+    # screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
+    # try:
+    #     screenspace_points.retain_grad()
+    # except:
+    #     pass
+
+    #code from deform gs : jinjing
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
     screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
+    screenspace_points_densify = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
     try:
         screenspace_points.retain_grad()
+        screenspace_points_densify.retain_grad()
     except:
         pass
+
 
     # Set up rasterization configuration
     
@@ -119,6 +130,9 @@ def render_flow(viewpoint_camera, pc : GaussianModel, pipe, bg_color : torch.Ten
     rendered_image, radii, depth = rasterizer(
         means3D = means3D_final,
         means2D = means2D,
+        #jj
+        means2D_densify=screenspace_points_densify,
+
         shs = shs,
         colors_precomp = colors_precomp,
         opacities = opacity,
