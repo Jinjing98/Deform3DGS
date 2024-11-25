@@ -108,9 +108,12 @@ class EndoNeRF_Dataset(object):
         self.white_bg = False
         #extend
         self.tool_mask = tool_mask
-        self.dataset = 'EndoNeRF' if 'pulling' in self.root_dir or 'cutting' in self.root_dir else "StereoMIS"
-        if self.dataset == 'StereoMIS':
-            assert 'P2_' in self.root_dir, self.root_dir
+        if 'pulling' in self.root_dir or 'cutting' in self.root_dir:
+            self.dataset = 'EndoNeRF' 
+        elif 'P2_' in self.root_dir:
+            self.dataset = "StereoMIS"
+        else:
+            assert 0, self.root_dir
 
         self.load_meta()
         print(f"meta data loaded, total image:{len(self.image_paths)}")

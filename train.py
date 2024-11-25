@@ -259,7 +259,9 @@ if __name__ == "__main__":
         #update with tool_info automatically
         if hasattr(args,'tool_mask'):
             setattr(args, 'expname', f'{args.expname}_{args.tool_mask}')
-
+        if 'pulling' in args.source_path or 'cutting' in args.source_path:
+            assert args.tool_mask == "use",'nouse and inverse might be problematic---the data gt depth always masked tool region....'
+    
     print("Optimizing " + args.model_path)
 
     # Initialize system state (RNG)
