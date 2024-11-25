@@ -10,7 +10,7 @@ import cv2
 import shutil
 
 RAFT_config = {
-    "pretrained": "submodules/RAFT/pretrained/raft-things.pth",
+    "pretrained": "/mnt/ceph/tco/TCO-Staff/Homes/jinjing/proj/endomotion/pretrained_models/raft-things.pth",
     "iters": 12,
     "dropout": 0.0,
     "small": False,
@@ -64,10 +64,19 @@ class DepthEstimator(torch.nn.Module):
         depth[~valid] = 0.0
         return depth.unsqueeze(1)
         
-def reformat_dataset(data_dir, start_frame, end_frame, img_size=(512, 640)):
+def reformat_dataset(data_dir, start_frame, end_frame, img_size=(512, 640), dst_dir_base = None, skip_depth_infer = False):
     """
     Reformat the StereoMIS to the same format as EndoNeRF dataset by stereo depth estimation.
     """
+    if dst_dir_base == None:
+        assert 0, "better write the processed data to another dir"
+    else:
+        #udpate
+        assert 'P' in data_dir,data_dir
+        data_dir = os.path.join(STEREOMIS_BASE,data_dir)
+        dst_dir = dst_dir_base #os.path.join(dst_dir_base,os.path.basename(data_dir))
+        os.makedirs(dst_dir, exist_ok=True)
+
     # Load parameters after rectification
     calib_file = os.path.join(data_dir, 'StereoCalibration.ini')
     assert os.path.exists(calib_file), "Calibration file not found."
@@ -83,11 +92,14 @@ def reformat_dataset(data_dir, start_frame, end_frame, img_size=(512, 640)):
     resize = Resize(img_size)
     resize_msk = Resize(img_size, interpolation=InterpolationMode.NEAREST)
     
-    # Configurate depth estimator. We follow the settings of RAFT in robust-pose-estimator(https://github.com/aimi-lab/robust-pose-estimator)
-    depth_estimator = DepthEstimator(RAFT_config)
-    
+    if not skip_depth_infer:
+        # Configurate depth estimator. We follow the settings of RAFT in robust-pose-estimator(https://github.com/aimi-lab/robust-pose-estimator)
+        depth_estimator = DepthEstimator(RAFT_config)
+    else:
+        print('Read depth from local.')
     # Create folders
-    output_dir = os.path.join(data_dir, 'stereo_'+ os.path.basename(data_dir)+'_'+str(start_frame)+'_'+str(end_frame))
+    # output_dir = os.path.join(data_dir, 'stereo_'+ os.path.basename(data_dir)+'_'+str(start_frame)+'_'+str(end_frame))
+    output_dir = os.path.join(dst_dir, os.path.basename(data_dir)+'_'+str(start_frame)+'_'+str(end_frame))
     image_dir = os.path.join(output_dir, 'images')
     mask_dir = os.path.join(output_dir, 'masks')
     depth_dir = os.path.join(output_dir, 'depth')
@@ -98,13 +110,19 @@ def reformat_dataset(data_dir, start_frame, end_frame, img_size=(512, 640)):
     if not os.path.exists(depth_dir):
         os.makedirs(depth_dir)
     poses_bounds = []
-    for i, frame in enumerate(frames):
+    from tqdm import tqdm
+    print('!*******************************************')
+    print('!!!!Hard set 0 pose----only static cam!')
+    for i, frame in enumerate(tqdm(frames)):
         left_img = torch.from_numpy(cv2.cvtColor(cv2.imread(os.path.join(data_dir, 'video_frames', frame)), cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float()
         right_img = torch.from_numpy(cv2.cvtColor(cv2.imread(os.path.join(data_dir, 'video_frames', frame.replace('l', 'r'))), cv2.COLOR_BGR2RGB)).permute(2, 0, 1).float()
         left_img = resize(left_img)
         right_img = resize(right_img)
-        with torch.no_grad():
-            depth = depth_estimator(left_img[None], right_img[None], baseline[None])
+        if skip_depth_infer:
+            assert 0,'not properly saved as actual depth values....check out the slam generated /flow_depth, might be proper...'
+        else:
+            with torch.no_grad():
+                depth = depth_estimator(left_img[None], right_img[None], baseline[None])
         try:
             mask = read_mask(os.path.join(data_dir, 'masks', frame))
             mask = resize_msk(mask)
@@ -134,14 +152,16 @@ def reformat_dataset(data_dir, start_frame, end_frame, img_size=(512, 640)):
         
     np.save(os.path.join(output_dir, 'poses_bounds.npy'), np.array(poses_bounds))
     
-if __name__ == "__main__":
+if __name__ == "__main__":            
+    STEREOMIS_BASE = '/mnt/ceph/tco/TCO-All/SharedDatasets/StereoMIS/'
     torch.manual_seed(1234)
     np.random.seed(1234)
     # Set up command line argument parser
     parser = ArgumentParser(description="parameters for dataset format conversions")
-    parser.add_argument('--data_dir', '-d', type=str, default='data/StereoMIS/P3')
+    parser.add_argument('--dst_dir_base', '-b', type=str, default='/mnt/cluster/datasets/StereoMIS_processed')
+    parser.add_argument('--data_dir', '-d', type=str, default='P2_3')
     # Frame ID of the start and end of the sequence. Of note, only 2 arguments (start and end) are required.
     parser.add_argument('--frame_id', '-f',nargs="+", action=check_arg_limits('frame_id', 2), type=int, default=[9100, 9467])
     args = parser.parse_args()
     frame_id = args.frame_id
-    reformat_dataset(args.data_dir, frame_id[0], frame_id[1])
+    reformat_dataset(args.data_dir,frame_id[0], frame_id[1],dst_dir_base=args.dst_dir_base, skip_depth_infer = False)
