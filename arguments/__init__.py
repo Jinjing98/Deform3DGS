@@ -137,8 +137,25 @@ def get_combined_args(parser : ArgumentParser):
     args_cmdline = parser.parse_args(cmdlne_string)
 
     try:
+
+        # Search for matching directories
+        import glob
+        base_dir = os.path.dirname(args_cmdline.model_path)
+        search_substring = os.path.basename(args_cmdline.model_path)
+
+        # Use glob to find directories with the substring in their name
+        matching_dirs = [
+            d for d in glob.glob(f"{base_dir}/*") 
+            if os.path.isdir(d) and search_substring in os.path.basename(d)
+        ]
+        assert len(matching_dirs) == 1, f'{glob.glob(args_cmdline.model_path)} {args_cmdline.model_path}'
+        args_cmdline.model_path = matching_dirs[0]
+
+
         cfgfilepath = os.path.join(args_cmdline.model_path, "cfg_args")
         print("Looking for config file in", cfgfilepath)
+
+
         with open(cfgfilepath) as cfg_file:
             print("Config file found: {}".format(cfgfilepath))
             cfgfile_string = cfg_file.read()
