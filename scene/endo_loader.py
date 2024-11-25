@@ -106,6 +106,11 @@ class EndoNeRF_Dataset(object):
         self.blender2opencv = np.eye(4)
         self.transform = T.ToTensor()
         self.white_bg = False
+        #extend
+        self.tool_mask = tool_mask
+        self.dataset = 'EndoNeRF' if 'pulling' in self.root_dir or 'cutting' in self.root_dir else "StereoMIS"
+        if self.dataset == 'StereoMIS':
+            assert 'P2_' in self.root_dir, self.root_dir
 
         self.load_meta()
         print(f"meta data loaded, total image:{len(self.image_paths)}")
@@ -116,8 +121,6 @@ class EndoNeRF_Dataset(object):
         self.video_idxs = [i for i in range(n_frames)]
         
         self.maxtime = 1.0
-        #extend
-        self.tool_mask = tool_mask
 
     def load_meta(self):
         """
@@ -125,7 +128,7 @@ class EndoNeRF_Dataset(object):
         """
         
         # coordinate transformation 
-        if 'stereo_' in self.root_dir:
+        if self.dataset == 'StereoMIS':
             poses_arr = np.load(os.path.join(self.root_dir, "poses_bounds.npy"))
             try:
                 poses = poses_arr[:, :-2].reshape([-1, 3, 5])  # (N_cams, 3, 5)
@@ -142,7 +145,7 @@ class EndoNeRF_Dataset(object):
                                         [0, focal, cy],
                                         [0, 0, 1]]).astype(np.float32)
             poses = np.concatenate([poses[..., :1], poses[..., 1:2], poses[..., 2:3], poses[..., 3:4]], -1)
-        else: 
+        elif self.dataset == 'EndoNeRF':
             # load poses
             poses_arr = np.load(os.path.join(self.root_dir, "poses_bounds.npy"))
             poses = poses_arr[:, :-2].reshape([-1, 3, 5])  # (N_cams, 3, 5)
@@ -153,7 +156,8 @@ class EndoNeRF_Dataset(object):
                                         [0, focal, H//2],
                                         [0, 0, 1]]).astype(np.float32)
             poses = np.concatenate([poses[..., :1], -poses[..., 1:2], -poses[..., 2:3], poses[..., 3:4]], -1)
-        
+        else:
+            assert 0, NotImplemented
         # prepare poses
         self.image_poses = []
         self.image_times = []
@@ -195,30 +199,31 @@ class EndoNeRF_Dataset(object):
             # mask / depth
             mask_path = self.masks_paths[idx]
             mask = Image.open(mask_path)
+            #mask refer to tool are valued
+            if self.dataset in ['StereoMIS']:
+                mask = 255-np.array(mask) 
+            elif self.dataset in ['EndoNeRF']:
+                mask = np.array(mask)  
+            else:
+                assert 0, NotImplementedError
+            
             # # StereoMIS 
-            # if 'stereo_' in self.root_dir:
+            # if self.dataset == 'StereoMIS':
             #     mask = np.array(mask)
             #     if len(mask.shape) > 2:
             #         mask = (mask[..., 0]>0).astype(np.uint8)
             # else:
             #     mask = 1 - np.array(mask) / 255.0
-
-            # here adjust mask....
-            if 'stereo_' in self.root_dir:
-                assert self.tool_mask == 'use', 'not support'
-                mask = np.array(mask)
-                if len(mask.shape) > 2:
-                    mask = (mask[..., 0]>0).astype(np.uint8)
+            if self.tool_mask == 'use':
+                mask = 1 - np.array(mask) / 255.0
+            elif self.tool_mask == 'inverse':
+                mask = np.array(mask) / 255.0
+            elif self.tool_mask == 'nouse':
+                mask = np.ones_like(mask)
             else:
-                if self.tool_mask == 'use':
-                    mask = 1 - np.array(mask) / 255.0
-                elif self.tool_mask == 'inverse':
-                    mask = np.array(mask) / 255.0
-                elif self.tool_mask == 'nouse':
-                    mask = np.ones_like(mask)
-                else:
-                    assert 0
-
+                assert 0
+            assert len(mask.shape)==2
+        
             depth_path = self.depth_paths[idx]
             depth = np.array(Image.open(depth_path))
             close_depth = np.percentile(depth[depth!=0], 3.0)
@@ -258,7 +263,7 @@ class EndoNeRF_Dataset(object):
         depth_mask[np.bitwise_and(depth<close_depth, depth!=0)] = 0
         depth_mask[depth==0] = 0
         depth[depth_mask==0] = 0
-        # if 'stereo_' in self.root_dir:
+        # if self.dataset == 'StereoMIS':
         #     mask = np.array(Image.open(self.masks_paths[0]))
         #     if len(mask.shape) > 2:
         #         mask = (mask[..., 0]>0).astype(np.uint8) 
@@ -267,25 +272,23 @@ class EndoNeRF_Dataset(object):
 
         #use mask in init too
         mask = Image.open(self.masks_paths[0])
-        if 'stereo_' in self.root_dir:
-            assert self.tool_mask == 'use', 'not support'
-            mask = np.array(mask)
-            if len(mask.shape) > 2:
-                mask = (mask[..., 0]>0).astype(np.uint8) 
+        #mask refer to tool are valued
+        if self.dataset in ['StereoMIS']:
+            mask = 255-np.array(mask) 
+        elif self.dataset in ['EndoNeRF']:
+            mask = np.array(mask)  
         else:
-            if self.tool_mask == 'use':
-                mask = 1 - np.array(mask) / 255.0
-            elif self.tool_mask == 'inverse':
-                mask = np.array(mask) / 255.0
-            elif self.tool_mask == 'nouse':
-                mask = np.ones_like(mask)
-            else:
-                assert 0
+            assert 0, NotImplementedError
 
-
-
-
-
+        if self.tool_mask == 'use':
+            mask = 1 - np.array(mask) / 255.0
+        elif self.tool_mask == 'inverse':
+            mask = np.array(mask) / 255.0
+        elif self.tool_mask == 'nouse':
+            mask = np.ones_like(mask)
+        else:
+            assert 0
+        assert len(mask.shape)==2
         mask = np.logical_and(depth_mask, mask)   
         color = np.array(Image.open(self.image_paths[0]))/255.0
         # color_uint8 = np.array(Image.open(self.image_paths[0]), dtype=np.uint8)
@@ -334,14 +337,26 @@ class EndoNeRF_Dataset(object):
             c2ref = np.linalg.inv(ref_c2w) @ c2w
             depth = np.array(Image.open(self.depth_paths[j]))
             color = np.array(Image.open(self.image_paths[j]))/255.0
-            # mask = 1 - np.array(Image.open(self.masks_paths[0]))/255.0   
-            if 'stereo_' in self.root_dir:
-                mask = np.array(Image.open(self.masks_paths[j]))
-                if len(mask.shape) > 2:
-                    mask = (mask[..., 0]>0).astype(np.uint8)
-                    
+            # mask = 1 - np.array(Image.open(self.masks_paths[0]))/255.0  
+
+            mask = Image.open(self.masks_paths[j])
+            #mask refer to tool are valued
+            if self.dataset in ['StereoMIS']:
+                mask = 255-np.array(mask) 
+            elif self.dataset in ['EndoNeRF']:
+                mask = np.array(mask)  
             else:
-                mask = 1 - np.array(Image.open(self.masks_paths[j]))/255.0       
+                assert 0, NotImplementedError
+                
+            if self.tool_mask == 'use':
+                mask = 1 - np.array(mask) / 255.0
+            elif self.tool_mask == 'inverse':
+                mask = np.array(mask) / 255.0
+            elif self.tool_mask == 'nouse':
+                mask = np.ones_like(mask)
+            else:
+                assert 0
+            assert len(mask.shape)==2
             depth_mask = np.ones(depth.shape).astype(np.float32)
             close_depth = np.percentile(depth[depth!=0], 3.0)
             inf_depth = np.percentile(depth[depth!=0], 99.8)
