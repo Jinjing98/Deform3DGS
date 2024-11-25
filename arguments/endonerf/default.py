@@ -2,7 +2,7 @@ ModelParams = dict(
     extra_mark = 'endonerf',
     camera_extent = 10,
 
-    tool_mask = 'use', #'use'(default) 'inverse' 'nouse'
+    tool_mask = 'inverse', #'use'(default) 'inverse' 'nouse'
 )
 
 OptimizationParams = dict(

@@ -258,12 +258,34 @@ class EndoNeRF_Dataset(object):
         depth_mask[np.bitwise_and(depth<close_depth, depth!=0)] = 0
         depth_mask[depth==0] = 0
         depth[depth_mask==0] = 0
+        # if 'stereo_' in self.root_dir:
+        #     mask = np.array(Image.open(self.masks_paths[0]))
+        #     if len(mask.shape) > 2:
+        #         mask = (mask[..., 0]>0).astype(np.uint8) 
+        # else:
+        #     mask = 1 - np.array(Image.open(self.masks_paths[0]))/255.0
+
+        #use mask in init too
+        mask = Image.open(self.masks_paths[0])
         if 'stereo_' in self.root_dir:
-            mask = np.array(Image.open(self.masks_paths[0]))
+            assert self.tool_mask == 'use', 'not support'
+            mask = np.array(mask)
             if len(mask.shape) > 2:
                 mask = (mask[..., 0]>0).astype(np.uint8) 
         else:
-            mask = 1 - np.array(Image.open(self.masks_paths[0]))/255.0
+            if self.tool_mask == 'use':
+                mask = 1 - np.array(mask) / 255.0
+            elif self.tool_mask == 'inverse':
+                mask = np.array(mask) / 255.0
+            elif self.tool_mask == 'nouse':
+                mask = np.ones_like(mask)
+            else:
+                assert 0
+
+
+
+
+
         mask = np.logical_and(depth_mask, mask)   
         color = np.array(Image.open(self.image_paths[0]))/255.0
         # color_uint8 = np.array(Image.open(self.image_paths[0]), dtype=np.uint8)
