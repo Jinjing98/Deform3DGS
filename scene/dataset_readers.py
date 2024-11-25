@@ -69,15 +69,18 @@ def getNerfppNorm(cam_info):
 
 
 
-def fetchPly(path):
-    plydata = PlyData.read(path)
+def fetchPly(path = None, plydata = None):
+    if path == None:
+        assert plydata != None
+    else:
+        plydata = PlyData.read(path)
     vertices = plydata['vertex']
     positions = np.vstack([vertices['x'], vertices['y'], vertices['z']]).T
     colors = np.vstack([vertices['red'], vertices['green'], vertices['blue']]).T / 255.0
     normals = np.vstack([vertices['nx'], vertices['ny'], vertices['nz']]).T
     return BasicPointCloud(points=positions, colors=colors, normals=normals)
 
-def storePly(path, xyz, rgb):
+def storePly(path, xyz, rgb, wo_write = False):
     # Define the dtype for the structured array
     dtype = [('x', 'f4'), ('y', 'f4'), ('z', 'f4'),
             ('nx', 'f4'), ('ny', 'f4'), ('nz', 'f4'),
@@ -91,8 +94,9 @@ def storePly(path, xyz, rgb):
     # Create the PlyData object and write to file
     vertex_element = PlyElement.describe(elements, 'vertex')
     ply_data = PlyData([vertex_element])
-    ply_data.write(path)
-
+    if not wo_write:
+        ply_data.write(path)
+    return ply_data
 
 def generateCamerasFromTransforms(path, template_transformsfile, extension, maxtime):
     trans_t = lambda t : torch.Tensor([
@@ -167,15 +171,22 @@ def readEndoNeRFInfo(datadir,tool_mask = 'use'):
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
     # initialize sparse point clouds
+    print('The init points for training did not consider mask?...')
+    print('take care! it keeps changing for each runs!...')
     ply_path = os.path.join(datadir, "points3d.ply")
+
     xyz, rgb, normals = endo_dataset.get_sparse_pts()
+    print('do we need to perform tool_mask here as well?')
     
     normals = np.random.random((xyz.shape[0], 3))
     pcd = BasicPointCloud(points=xyz, colors=rgb, normals=normals)
-    storePly(ply_path, xyz,rgb*255)
+    # storePly(ply_path, xyz,rgb*255)  # the points3d.ply is not used at all, try not touch the src dataset
+    plydata = storePly(ply_path, xyz,rgb*255, wo_write=True)  # the points3d.ply is not used at all, try not touch the src dataset
+    print('the points3d.ply is not used at all, try not touch the src dataset')
 
     try:
-        pcd = fetchPly(ply_path)
+        # pcd = fetchPly(ply_path)
+        pcd = fetchPly(path = None, plydata = plydata)
     except:
         pcd = None
     

@@ -47,6 +47,7 @@ class Scene:
                                                             )
             print("Found poses_bounds.py and extra marks with EndoNeRf")
         elif os.path.exists(os.path.join(args.source_path, "point_cloud.obj")) or os.path.exists(os.path.join(args.source_path, "left_point_cloud.obj")):
+            assert self.tool_mask == 'use', NotImplementedError
             scene_info = sceneLoadTypeCallbacks["scared"](args.source_path, args.white_background, args.eval)
             print("Found point_cloud.obj, assuming SCARED data!")
         else:

@@ -148,7 +148,7 @@ def get_combined_args(parser : ArgumentParser):
             d for d in glob.glob(f"{base_dir}/*") 
             if os.path.isdir(d) and search_substring in os.path.basename(d)
         ]
-        assert len(matching_dirs) == 1, f'{glob.glob(args_cmdline.model_path)} {args_cmdline.model_path}'
+        assert len(matching_dirs) == 1, f'{matching_dirs} {args_cmdline.model_path}'
         args_cmdline.model_path = matching_dirs[0]
 
 
