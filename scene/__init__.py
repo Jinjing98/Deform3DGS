@@ -31,6 +31,9 @@ class Scene:
         self.loaded_iter = None
         self.gaussians = gaussians
         
+        #extend
+        self.tool_mask = args.tool_mask
+        
         if load_iteration:
             if load_iteration == -1:
                 self.loaded_iter = searchForMaxIteration(os.path.join(self.model_path, "point_cloud"))
@@ -40,7 +43,7 @@ class Scene:
         
         if os.path.exists(os.path.join(args.source_path, "poses_bounds.npy")) and args.extra_mark == 'endonerf':
             scene_info = sceneLoadTypeCallbacks["endonerf"](args.source_path,
-                                                            tool_mask=args.tool_mask,
+                                                            tool_mask=self.tool_mask,
                                                             )
             print("Found poses_bounds.py and extra marks with EndoNeRf")
         elif os.path.exists(os.path.join(args.source_path, "point_cloud.obj")) or os.path.exists(os.path.join(args.source_path, "left_point_cloud.obj")):

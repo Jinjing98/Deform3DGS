@@ -195,23 +195,29 @@ class EndoNeRF_Dataset(object):
             # mask / depth
             mask_path = self.masks_paths[idx]
             mask = Image.open(mask_path)
-            # StereoMIS 
+            # # StereoMIS 
+            # if 'stereo_' in self.root_dir:
+            #     mask = np.array(mask)
+            #     if len(mask.shape) > 2:
+            #         mask = (mask[..., 0]>0).astype(np.uint8)
+            # else:
+            #     mask = 1 - np.array(mask) / 255.0
+
+            # here adjust mask....
             if 'stereo_' in self.root_dir:
+                assert self.tool_mask == 'use', 'not support'
                 mask = np.array(mask)
                 if len(mask.shape) > 2:
                     mask = (mask[..., 0]>0).astype(np.uint8)
             else:
-                mask = 1 - np.array(mask) / 255.0
-
-            # here adjust mask....
-            if self.tool_mask == 'use':
-                mask = 1 - np.array(mask) / 255.0
-            elif self.tool_mask == 'inverse':
-                mask = np.array(mask) / 255.0
-            elif self.tool_mask == 'nouse':
-                mask = np.ones_like(mask)
-            else:
-                assert 0
+                if self.tool_mask == 'use':
+                    mask = 1 - np.array(mask) / 255.0
+                elif self.tool_mask == 'inverse':
+                    mask = np.array(mask) / 255.0
+                elif self.tool_mask == 'nouse':
+                    mask = np.ones_like(mask)
+                else:
+                    assert 0
 
             depth_path = self.depth_paths[idx]
             depth = np.array(Image.open(depth_path))
