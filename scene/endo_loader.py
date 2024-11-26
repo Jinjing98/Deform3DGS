@@ -303,7 +303,13 @@ class EndoNeRF_Dataset(object):
         c2w = self.get_camera_poses((R, T))
         pts = self.transform_cam2cam(pts, c2w)
         
-        pts, colors = self.search_pts_colors_with_motion(pts, colors, mask, c2w)
+        debug_skip_MAPF = False
+        # debug_skip_MAPF = True
+        if debug_skip_MAPF:
+            assert self.tool_mask == 'inverse'
+            pass
+        else:
+            pts, colors = self.search_pts_colors_with_motion(pts, colors, mask, c2w)#MAPF
         
         normals = np.zeros((pts.shape[0], 3))
 
