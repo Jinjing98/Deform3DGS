@@ -1,8 +1,12 @@
 ModelParams = dict(
     extra_mark = 'endonerf',
     camera_extent = 10,
-
-    tool_mask = 'use', #'use'(default) 'inverse' 'nouse'
+    #to-do:
+    #    supprot bash edit
+    #    support debug dst opt dur
+    #    support run for muti splits
+    #    support hard changes iters
+    tool_mask = 'inverse', #'use'(default) 'inverse' 'nouse'
 )
 
 OptimizationParams = dict(
@@ -10,7 +14,8 @@ OptimizationParams = dict(
     deformation_lr_init = 0.00016,
     deformation_lr_final = 0.0000016,
     deformation_lr_delay_mult = 0.01,
-    iterations = 3000,
+    # iterations = 3000,
+    iterations = 9000,#for inverse
     percent_dense = 0.01,
     opacity_reset_interval = 3000,
     position_lr_max_steps = 4000,
