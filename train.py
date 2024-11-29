@@ -218,7 +218,12 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
         tb_writer.add_scalar(f'train_loss_patches/l1_loss', Ll1.item(), iteration)
         tb_writer.add_scalar(f'train_loss_patchestotal_loss', loss.item(), iteration)
         tb_writer.add_scalar(f'iter_time', elapsed, iteration)
-    
+
+        #jj    
+        tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
+        # tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
+        # torch.cuda.empty_cache()
+
 
 
 def setup_seed(seed):
@@ -260,7 +265,9 @@ if __name__ == "__main__":
         if hasattr(args,'tool_mask'):
             setattr(args, 'expname', f'{args.expname}_{args.tool_mask}')
         if 'pulling' in args.source_path or 'cutting' in args.source_path:
-            assert args.tool_mask == "use",'nouse and inverse might be problematic---the data gt depth always masked tool region....'
+            pass
+            print('TODO','nouse and inverse might be problematic---the data gt depth always masked tool region....')
+            # assert args.tool_mask == "use",'nouse and inverse might be problematic---the data gt depth always masked tool region....'
     
     print("Optimizing " + args.model_path)
 
