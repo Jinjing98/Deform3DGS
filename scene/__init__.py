@@ -32,6 +32,7 @@ class Scene:
         self.gaussians = gaussians
         
         #extend
+        print('TODO','remove, not necessary?')
         self.tool_mask = args.tool_mask
         
         if load_iteration:
@@ -65,6 +66,7 @@ class Scene:
         print("Loading Video Cameras")
         self.video_camera =  scene_info.video_cameras 
         
+        # assert 0, f'{scene_info.point_cloud.points} {len(scene_info.point_cloud.points)}'
         xyz_max = scene_info.point_cloud.points.max(axis=0)
         xyz_min = scene_info.point_cloud.points.min(axis=0)
         # self.gaussians._deformation.deformation_net.grid.set_aabb(xyz_max,xyz_min)

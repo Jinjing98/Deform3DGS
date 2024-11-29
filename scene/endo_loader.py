@@ -265,6 +265,13 @@ class EndoNeRF_Dataset(object):
         depth_mask[depth>inf_depth] = 0
         depth_mask[np.bitwise_and(depth<close_depth, depth!=0)] = 0
         depth_mask[depth==0] = 0
+
+        #debug depth_mask
+        # debug_en_depth = True
+        # debug_en_depth = False
+        # if debug_en_depth:
+        #     depth_mask = np.ones(depth.shape).astype(np.float32)
+
         depth[depth_mask==0] = 0
         # if self.dataset == 'StereoMIS':
         #     mask = np.array(Image.open(self.masks_paths[0]))

@@ -8,6 +8,17 @@ ModelParams = dict(
     #    support hard changes iters
     tool_mask = 'inverse', #'use'(default) 'inverse' 'nouse'
 )
+#pulling
+#problem lies in get_sparse_pts: it will consider the 0 in depths beforehand, endonerf have missing wrong data there
+#use 28301
+#nouse 28301
+#inverse 0
+
+#SM
+#use 34281
+#nouse 36877
+#inverse 3027
+
 
 OptimizationParams = dict(
     coarse_iterations = 0,

@@ -9,6 +9,16 @@ screenshots
 data/
 data
 submodules/
+assets/
+*.TTF
+
+# diff_rasterization/dist
+
+# submodules/*.so
+*.so
+*.o
+
+
 
 # toy_data/
 # */__pycache__/*
@@ -21,4 +31,11 @@ submodules/
 # *.pyc
 
 
+#unset whatever has not been tracked
 
+# submodules/depth-diff-gaussian-rasterization/diff_gaussian_rasterization/__pycache__/__init__.cpython-37.pyc
+# submodules/simple-knn/build/lib.linux-x86_64-cpython-37/simple_knn/_C.cpython-37m-x86_64-linux-gnu.so
+# baselines/submodules/simple-knn/build/temp.linux-x86_64-cpython-37/ext.o
+# submodules/simple-knn/build/temp.linux-x86_64-cpython-37/spatial.o
+# submodules/simple-knn/build/lib.linux-x86_64-cpython-37/simple_knn/_C.cpython-37m-x86_64-linux-gnu.so
+submodules/simple-knn/build/temp.linux-x86_64-cpython-37/simple_knn.o
