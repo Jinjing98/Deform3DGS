@@ -23,22 +23,19 @@ from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 from scene.regulation import compute_plane_smoothness
 from typing import Tuple
-
-
-
 class GaussianModelBase(nn.Module):
     def __init__(self, model_name='background', num_classes=1):
         super().__init__()
         cfg_model = cfg.model.gaussian
         self.model_name = model_name
         
-        # stree add
+        # stree add 
         # semantic
         self.num_classes = num_classes  
         self.semantic_mode = cfg_model.get('semantic_mode', 'logits')
         assert self.semantic_mode in ['logits', 'probabilities']
         
-        # stree add
+        # stree add 
         # spherical harmonics
         default_max_sh_degree = cfg_model.get('sh_degree')
         if self.model_name == 'background':
@@ -62,7 +59,7 @@ class GaussianModelBase(nn.Module):
         self.optimizer = None
         self.percent_dense = 0
         self.spatial_lr_scale = 0
-        # stree add
+        # stree add 
         self._semantic = torch.empty(0)
         self.setup_functions()
     
@@ -72,6 +69,9 @@ class GaussianModelBase(nn.Module):
         fused_color = RGB2SH(torch.tensor(np.asarray(pcd.colors)).float().cuda())
         features = torch.zeros((fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2)).float().cuda()
         features[..., 0] = fused_color
+        # other works 
+        # features[:, :3, 0 ] = fused_color
+        # features[:, 3:, 1:] = 0.0
 
         print(f"Number of points at initialisation for {self.model_name}: ", fused_point_cloud.shape[0])
         dist2 = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(pcd.points)).float().cuda()), 0.0000001)
@@ -80,6 +80,7 @@ class GaussianModelBase(nn.Module):
         rots[:, 0] = 1
 
         opacities = inverse_sigmoid(0.1 * torch.ones((fused_point_cloud.shape[0], 1), dtype=torch.float, device="cuda"))
+        # stree added
         semamtics = torch.zeros((fused_point_cloud.shape[0], self.num_classes), dtype=torch.float, device="cuda")
         
         self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
@@ -88,85 +89,11 @@ class GaussianModelBase(nn.Module):
         self._scaling = nn.Parameter(scales.requires_grad_(True))
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
+        # stree added
         self._semantic = nn.Parameter(semamtics.requires_grad_(True))
+        
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
-    def make_ply(self):
-        xyz = self._xyz.detach().cpu().numpy()
-        normals = np.zeros_like(xyz)
-        f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
-        f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
-        opacities = self._opacity.detach().cpu().numpy()
-        scale = self._scaling.detach().cpu().numpy()
-        rotation = self._rotation.detach().cpu().numpy()
-        semantic = self._semantic.detach().cpu().numpy()
-
-        dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
-
-        elements = np.empty(xyz.shape[0], dtype=dtype_full)
-        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation, semantic), axis=1)
-        elements[:] = list(map(tuple, attributes))
-        
-        return elements
-
-    def save_ply(self, path):
-        mkdir_p(os.path.dirname(path))
-        elements = self.make_ply()
-        elements = PlyElement.describe(elements, 'vertex')
-        PlyData([elements]).write(path)
-        
-    def load_ply(self, path=None, input_ply=None):
-        if path is None:
-            plydata = input_ply
-        else:
-            plydata = PlyData.read(path)
-            plydata = plydata.elements[0]
-
-        xyz = np.stack((np.asarray(plydata["x"]),
-                        np.asarray(plydata["y"]),
-                        np.asarray(plydata["z"])),  axis=1)
-        opacities = np.asarray(plydata["opacity"])[..., np.newaxis]
- 
-        base_f_names = [p.name for p in plydata.properties if p.name.startswith("f_dc_")]
-        base_f_names = sorted(base_f_names, key = lambda x: int(x.split('_')[-1]))
-        extra_f_names = [p.name for p in plydata.properties if p.name.startswith("f_rest_")]
-        extra_f_names = sorted(extra_f_names, key = lambda x: int(x.split('_')[-1]))
-        features_dc = np.zeros((xyz.shape[0], len(base_f_names)))
-        features_extra = np.zeros((xyz.shape[0], len(extra_f_names)))
-        for idx, attr_name in enumerate(base_f_names):
-            features_dc[:, idx] = np.asarray(plydata[attr_name])
-        for idx, attr_name in enumerate(extra_f_names):
-            features_extra[:, idx] = np.asarray(plydata[attr_name])
-        features_dc = features_dc.reshape(features_dc.shape[0], 3, -1)
-        features_extra = features_extra.reshape(features_extra.shape[0], 3, -1)
-       
-        scale_names = [p.name for p in plydata.properties if p.name.startswith("scale_")]
-        scale_names = sorted(scale_names, key = lambda x: int(x.split('_')[-1]))
-        scales = np.zeros((xyz.shape[0], len(scale_names)))
-        for idx, attr_name in enumerate(scale_names):
-            scales[:, idx] = np.asarray(plydata[attr_name])
-
-        rot_names = [p.name for p in plydata.properties if p.name.startswith("rot_")]
-        rot_names = sorted(rot_names, key = lambda x: int(x.split('_')[-1]))
-        rots = np.zeros((xyz.shape[0], len(rot_names)))
-        for idx, attr_name in enumerate(rot_names):
-            rots[:, idx] = np.asarray(plydata[attr_name])
-
-        semantic_names = [p.name for p in plydata.properties if p.name.startswith("semantic_")]
-        semantic_names = sorted(semantic_names, key = lambda x: int(x.split('_')[-1]))
-        semantic = np.zeros((xyz.shape[0], len(semantic_names)))
-        for idx, attr_name in enumerate(semantic_names):
-            semantic[:, idx] = np.asarray(plydata[attr_name])
- 
-        self._xyz = nn.Parameter(torch.tensor(xyz, dtype=torch.float, device="cuda").requires_grad_(True))
-        self._features_dc = nn.Parameter(torch.tensor(features_dc, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
-        self._features_rest = nn.Parameter(torch.tensor(features_extra, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
-        self._opacity = nn.Parameter(torch.tensor(opacities, dtype=torch.float, device="cuda").requires_grad_(True))
-        self._scaling = nn.Parameter(torch.tensor(scales, dtype=torch.float, device="cuda").requires_grad_(True))
-        self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
-        self._semantic = nn.Parameter(torch.tensor(semantic, dtype=torch.float, device="cuda").requires_grad_(True))
-
-        self.active_sh_degree = self.max_sh_degree
             
     def load_state_dict(self, state_dict):  
         self._xyz = state_dict['xyz']  
@@ -252,7 +179,7 @@ class GaussianModelBase(nn.Module):
         features_dc = self._features_dc
         features_rest = self._features_rest
         return torch.cat((features_dc, features_rest), dim=1)
-    
+    # stree added
     @property
     def get_semantic(self):
         if self.semantic_mode == 'logits':
@@ -267,8 +194,10 @@ class GaussianModelBase(nn.Module):
     def get_covariance(self, scaling_modifier = 1):
         return self.covariance_activation(self.get_scaling, scaling_modifier, self._rotation)
 
+    # stree added
     def get_normals(self, camera: Camera):
         scales, rotations = self.get_scaling, self.get_rotation    
+        # rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N,1,1)
         rotations_mat = quaternion_to_matrix(rotations)    
         min_scales = torch.argmin(scales, dim=-1)
         indices = torch.arange(min_scales.shape[0])
@@ -282,6 +211,7 @@ class GaussianModelBase(nn.Module):
 
         return normals
         
+    # stree added
     def scale_flatten_loss(self):
         scales = self.get_scaling
         sorted_scales = torch.sort(scales, dim=1, descending=False).values
@@ -337,6 +267,7 @@ class GaussianModelBase(nn.Module):
             if param_group["name"] == "xyz":
                 lr = self.xyz_scheduler_args(iteration)
                 param_group['lr'] = lr
+            # does not contain the grid part-- hexplane would need
 
     def construct_list_of_attributes(self):
         l = ['x', 'y', 'z', 'nx', 'ny', 'nz']
@@ -350,14 +281,94 @@ class GaussianModelBase(nn.Module):
             l.append('scale_{}'.format(i))
         for i in range(self._rotation.shape[1]):
             l.append('rot_{}'.format(i))
+        # stree added
         for i in range(self._semantic.shape[1]):
             l.append('semantic_{}'.format(i))
         return l
 
 
+
+    # stree added: seems changes a lot
+    def load_ply(self, path=None, input_ply=None):
+        if path is None:
+            plydata = input_ply
+        else:
+            plydata = PlyData.read(path)
+            plydata = plydata.elements[0]
+
+        xyz = np.stack((np.asarray(plydata["x"]),
+                        np.asarray(plydata["y"]),
+                        np.asarray(plydata["z"])),  axis=1)
+        opacities = np.asarray(plydata["opacity"])[..., np.newaxis]
+ 
+        base_f_names = [p.name for p in plydata.properties if p.name.startswith("f_dc_")]
+        base_f_names = sorted(base_f_names, key = lambda x: int(x.split('_')[-1]))
+        extra_f_names = [p.name for p in plydata.properties if p.name.startswith("f_rest_")]
+        extra_f_names = sorted(extra_f_names, key = lambda x: int(x.split('_')[-1]))
+        features_dc = np.zeros((xyz.shape[0], len(base_f_names)))
+        features_extra = np.zeros((xyz.shape[0], len(extra_f_names)))
+        for idx, attr_name in enumerate(base_f_names):
+            features_dc[:, idx] = np.asarray(plydata[attr_name])
+        for idx, attr_name in enumerate(extra_f_names):
+            features_extra[:, idx] = np.asarray(plydata[attr_name])
+        features_dc = features_dc.reshape(features_dc.shape[0], 3, -1)
+        features_extra = features_extra.reshape(features_extra.shape[0], 3, -1)
+       
+        scale_names = [p.name for p in plydata.properties if p.name.startswith("scale_")]
+        scale_names = sorted(scale_names, key = lambda x: int(x.split('_')[-1]))
+        scales = np.zeros((xyz.shape[0], len(scale_names)))
+        for idx, attr_name in enumerate(scale_names):
+            scales[:, idx] = np.asarray(plydata[attr_name])
+
+        rot_names = [p.name for p in plydata.properties if p.name.startswith("rot_")]
+        rot_names = sorted(rot_names, key = lambda x: int(x.split('_')[-1]))
+        rots = np.zeros((xyz.shape[0], len(rot_names)))
+        for idx, attr_name in enumerate(rot_names):
+            rots[:, idx] = np.asarray(plydata[attr_name])
+        # stree added
+        semantic_names = [p.name for p in plydata.properties if p.name.startswith("semantic_")]
+        semantic_names = sorted(semantic_names, key = lambda x: int(x.split('_')[-1]))
+        semantic = np.zeros((xyz.shape[0], len(semantic_names)))
+        for idx, attr_name in enumerate(semantic_names):
+            semantic[:, idx] = np.asarray(plydata[attr_name])
+ 
+        self._xyz = nn.Parameter(torch.tensor(xyz, dtype=torch.float, device="cuda").requires_grad_(True))
+        self._features_dc = nn.Parameter(torch.tensor(features_dc, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
+        self._features_rest = nn.Parameter(torch.tensor(features_extra, dtype=torch.float, device="cuda").transpose(1, 2).contiguous().requires_grad_(True))
+        self._opacity = nn.Parameter(torch.tensor(opacities, dtype=torch.float, device="cuda").requires_grad_(True))
+        self._scaling = nn.Parameter(torch.tensor(scales, dtype=torch.float, device="cuda").requires_grad_(True))
+        self._rotation = nn.Parameter(torch.tensor(rots, dtype=torch.float, device="cuda").requires_grad_(True))
+        # stree added
+        self._semantic = nn.Parameter(torch.tensor(semantic, dtype=torch.float, device="cuda").requires_grad_(True))
+
+        self.active_sh_degree = self.max_sh_degree
+
+    def make_ply(self):
+        xyz = self._xyz.detach().cpu().numpy()
+        normals = np.zeros_like(xyz)
+        f_dc = self._features_dc.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        f_rest = self._features_rest.detach().transpose(1, 2).flatten(start_dim=1).contiguous().cpu().numpy()
+        opacities = self._opacity.detach().cpu().numpy()
+        scale = self._scaling.detach().cpu().numpy()
+        rotation = self._rotation.detach().cpu().numpy()
+        # stree added
+        semantic = self._semantic.detach().cpu().numpy()
+        dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
+        elements = np.empty(xyz.shape[0], dtype=dtype_full)
+        attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation, \
+                                     semantic), axis=1)# stree added
+        elements[:] = list(map(tuple, attributes))
+        return elements
+    def save_ply(self, path):
+        mkdir_p(os.path.dirname(path))
+        elements = self.make_ply()
+        elements = PlyElement.describe(elements, 'vertex')
+        PlyData([elements]).write(path)
+    # stree added/renamed:
+    # exact the same as replace_tensor_to_optimizer(input differs)
+    #  better pass as dict
     def reset_optimizer(self, tensors_dict):
         optimizable_tensors = {}
-
         name_list = tensors_dict.keys()
         for group in self.optimizer.param_groups:
             if group['name'] in name_list:
@@ -379,34 +390,28 @@ class GaussianModelBase(nn.Module):
         for group in self.optimizer.param_groups:                
             if group['name'] not in prune_list:
                 continue
-        
             stored_state = self.optimizer.state.get(group['params'][0], None)
             if stored_state is not None:
                 stored_state["exp_avg"] = stored_state["exp_avg"][mask]
                 stored_state["exp_avg_sq"] = stored_state["exp_avg_sq"][mask]
-
                 del self.optimizer.state[group['params'][0]]
                 group["params"][0] = nn.Parameter((group["params"][0][mask].requires_grad_(True)))
                 self.optimizer.state[group['params'][0]] = stored_state
-
                 optimizable_tensors[group["name"]] = group["params"][0]
             else:
                 group["params"][0] = nn.Parameter(group["params"][0][mask].requires_grad_(True))
                 optimizable_tensors[group["name"]] = group["params"][0]
         return optimizable_tensors
-    
     def cat_optimizer(self, tensors_dict):
         optimizable_tensors = {}
         name_list = tensors_dict.keys()
         for group in self.optimizer.param_groups:
             if group['name'] not in name_list:
                 continue
-            
             assert len(group["params"]) == 1
             extension_tensor = tensors_dict[group["name"]]
             stored_state = self.optimizer.state.get(group['params'][0], None)
             if stored_state is not None:
-
                 stored_state["exp_avg"] = torch.cat((stored_state["exp_avg"], torch.zeros_like(extension_tensor)), dim=0)
                 stored_state["exp_avg_sq"] = torch.cat((stored_state["exp_avg_sq"], torch.zeros_like(extension_tensor)), dim=0)
 
@@ -420,15 +425,14 @@ class GaussianModelBase(nn.Module):
                 optimizable_tensors[group["name"]] = group["params"][0]
 
         return optimizable_tensors
-    
     def reset_opacity(self):
         opacities_new = inverse_sigmoid(torch.min(self.get_opacity, torch.ones_like(self.get_opacity) * 0.01))
         d = {'opacity': opacities_new}
         optimizable_tensors = self.reset_optimizer(d)
         self._opacity = optimizable_tensors["opacity"]
-
     def prune_points(self, mask):
         valid_points_mask = ~mask
+        # stree added/changed: contolled prune
         optimizable_tensors = self.prune_optimizer(valid_points_mask, 
             prune_list = ['xyz', 'f_dc', 'f_rest', 'opacity', 'scaling', 'rotation', 'semantic'])
 
@@ -438,12 +442,12 @@ class GaussianModelBase(nn.Module):
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
+        # stree added
         self._semantic = optimizable_tensors["semantic"]
 
         self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
         self.denom = self.denom[valid_points_mask]
         self.max_radii2D = self.max_radii2D[valid_points_mask]
-
 
     def densification_postfix(self, tensors_dict):
         optimizable_tensors = self.cat_optimizer(tensors_dict)
@@ -453,13 +457,14 @@ class GaussianModelBase(nn.Module):
         self._opacity = optimizable_tensors["opacity"]
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
+        #stree added
         self._semantic = optimizable_tensors["semantic"]
-        
         cat_points_num = self.get_xyz.shape[0] - self.xyz_gradient_accum.shape[0]
+        #stree added/changed
+        # why not completely reset to 0?
         self.xyz_gradient_accum = torch.cat([self.xyz_gradient_accum, torch.zeros(cat_points_num, 2).cuda()], dim=0)
         self.denom = torch.cat([self.denom, torch.zeros(cat_points_num, 1).cuda()], dim=0)
         self.max_radii2D = torch.cat([self.max_radii2D, torch.zeros(cat_points_num).cuda()], dim=0)
-
         # self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         # self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         # self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
@@ -470,6 +475,7 @@ class GaussianModelBase(nn.Module):
         # Extract points that satisfy the gradient condition
         padded_grad = torch.zeros((n_init_points), device="cuda")
         padded_grad[:grads.shape[0]] = grads.squeeze()
+        # stree added why?
         padded_extent = torch.zeros((n_init_points), device="cuda")
         padded_extent[:grads.shape[0]] = scene_extent
         
@@ -477,12 +483,14 @@ class GaussianModelBase(nn.Module):
         selected_pts_mask = torch.logical_and(selected_pts_mask,
             torch.max(self.get_scaling, dim=1).values > self.percent_dense * padded_extent)
 
+        #Stree added (also used in deform3dgs )--differs deform3dgs and 4dgs
         self.scalar_dict['points_split'] = selected_pts_mask.sum().item()
         print(f'Number of points to split: {selected_pts_mask.sum()}')
 
         stds = self.get_scaling[selected_pts_mask].repeat(N, 1)
         means = torch.zeros((stds.size(0), 3), device="cuda")
         samples = torch.normal(mean=means, std=stds)
+        # rots = build_rotation(self._rotation[selected_pts_mask]).repeat(N,1,1)
         rots = quaternion_to_matrix(self._rotation[selected_pts_mask]).repeat(N, 1, 1)
         new_xyz = torch.bmm(rots, samples.unsqueeze(-1)).squeeze(-1) + self.get_xyz[selected_pts_mask].repeat(N, 1)
         new_scaling = self.scaling_inverse_activation(self.get_scaling[selected_pts_mask].repeat(N, 1) / (0.8 * N))
@@ -490,6 +498,7 @@ class GaussianModelBase(nn.Module):
         new_features_dc = self._features_dc[selected_pts_mask].repeat(N, 1, 1)
         new_features_rest = self._features_rest[selected_pts_mask].repeat(N, 1, 1)
         new_opacity = self._opacity[selected_pts_mask].repeat(N, 1)
+        # Stree added
         new_semantic = self._semantic[selected_pts_mask].repeat(N, 1)
 
         self.densification_postfix({
@@ -512,6 +521,7 @@ class GaussianModelBase(nn.Module):
         selected_pts_mask = torch.logical_and(selected_pts_mask,
             torch.max(self.get_scaling, dim=1).values <= self.percent_dense * scene_extent)
 
+        # stree added (deform3dgs--follow above 'points_split')
         self.scalar_dict['points_clone'] = selected_pts_mask.sum().item()
         print(f'Number of points to clone: {selected_pts_mask.sum()}')
         
@@ -521,6 +531,7 @@ class GaussianModelBase(nn.Module):
         new_opacity = self._opacity[selected_pts_mask]
         new_scaling = self._scaling[selected_pts_mask]
         new_rotation = self._rotation[selected_pts_mask]
+        # stree added
         new_semantic = self._semantic[selected_pts_mask]
 
         self.densification_postfix({
@@ -537,6 +548,7 @@ class GaussianModelBase(nn.Module):
         grads = self.xyz_gradient_accum[:, 0:1] / self.denom
         grads[grads.isnan()] = 0.0
         
+        # stree added
         self.scalar_dict.clear()
         self.scalar_dict['points_total'] = self.get_xyz.shape[0]
         print(f'Number of current gaussians: {self.get_xyz.shape[0]}')
@@ -548,28 +560,28 @@ class GaussianModelBase(nn.Module):
         # Prune 
         prune_mask = (self.get_opacity < min_opacity).squeeze()
         if max_screen_size:
+            # stree added/changed: differ from 4dgs
             big_points_vs = self.max_radii2D > max_screen_size
             big_points_ws = self.get_scaling.max(dim=1).values > extent * self.percent_big_ws
             # prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
             prune_mask = torch.logical_or(prune_mask, big_points_ws)
 
         self.prune_points(prune_mask)
+        # stree added
         self.scalar_dict['points_pruned'] = prune_mask.sum().item()            
         print(f'Number of pruned gaussians: {prune_mask.sum()}')
-
-        
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 2), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
         torch.cuda.empty_cache()
-        
         return self.scalar_dict, self.tensor_dict
 
     def add_densification_stats(self, viewspace_point_tensor, update_filter):
         self.xyz_gradient_accum[update_filter, 0:1] += torch.norm(viewspace_point_tensor.grad[update_filter, :2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
-        
+    
+    # stree added
     def add_densification_stats_grad(self, viewspace_point_tensor_grad, update_filter):
         self.xyz_gradient_accum[update_filter, 0:1] += torch.norm(viewspace_point_tensor_grad[update_filter, :2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
