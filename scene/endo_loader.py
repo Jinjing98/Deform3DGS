@@ -79,6 +79,23 @@ class CameraInfo(NamedTuple):
     Zfar: float
     Znear: float
 
+# stree gs
+class streegs_CameraInfo(NamedTuple):
+    uid: int
+    R: np.array
+    T: np.array
+    FovY: np.array
+    FovX: np.array
+    K: np.array
+    image: np.array
+    image_path: str
+    image_name: str
+    width: int
+    height: int
+    metadata: dict = dict()
+    mask: np.array = None
+    acc_mask: np.array = None
+
 def normalize(v):
     """Normalize a vector."""
     return v / np.linalg.norm(v)
