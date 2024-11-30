@@ -19,11 +19,19 @@ from arguments import ModelParams
 from utils.camera_utils import cameraList_from_camInfos, camera_to_JSON
 from torch.utils.data import Dataset
 
+from typing import Union
+# from gaussian_model_base import GaussianModelBase
+from scene.tool_movement_model import GaussianModelActor
+from scene.mis_gaussian_model import MisGaussianModel
 class Scene:
 
-    gaussians : TissueGaussianModel
+    # gaussians : TissueGaussianModel
+    # gaussians : Union[GaussianModelBase, MisGaussianModel]
+    gaussians : Union[TissueGaussianModel, GaussianModelActor, MisGaussianModel]
     
-    def __init__(self, args : ModelParams, gaussians : TissueGaussianModel, load_iteration=None):
+    def __init__(self, args : ModelParams, \
+                 gaussians : Union[TissueGaussianModel, GaussianModelActor, MisGaussianModel], \
+                    load_iteration=None):
         """b
         :param path: Path to colmap scene main folder.
         """
