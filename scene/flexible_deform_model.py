@@ -24,7 +24,8 @@ from utils.general_utils import strip_symmetric, build_scaling_rotation
 from scene.regulation import compute_plane_smoothness
 from typing import Tuple
 
-class GaussianModel:
+# class GaussianModel:
+class TissueGaussianModel:
 
     def __init__(self, sh_degree : int, args):
         self.active_sh_degree = 0

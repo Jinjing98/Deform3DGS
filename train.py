@@ -17,7 +17,7 @@ from gaussian_renderer import render_flow as render
 
 import sys
 from scene import  Scene
-from scene.flexible_deform_model import GaussianModel
+from scene.flexible_deform_model import TissueGaussianModel
 from utils.general_utils import safe_state
 from tqdm import tqdm
 from utils.image_utils import psnr

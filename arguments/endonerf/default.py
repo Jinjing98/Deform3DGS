@@ -6,8 +6,8 @@ ModelParams = dict(
     #    support debug dst opt dur
     #    support run for muti splits
     #    support hard changes iters
-    init_mode = 'MAPF',#'MAPF', #'skipMAPF'
-    tool_mask = 'inverse', #'use'(default) 'inverse' 'nouse'
+    init_mode = 'rand',#'MAPF', #'skipMAPF' #rand
+    tool_mask = 'use', #'use'(default) 'inverse' 'nouse'
 )
 
 
