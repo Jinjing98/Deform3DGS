@@ -173,6 +173,15 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
                     size_threshold = 40 if iteration > opt.opacity_reset_interval else None
                     gaussians.prune(densify_threshold, opacity_threshold, scene.cameras_extent, size_threshold)
                     
+                # #from deformable 3d gs---surg-gs(0.0003/0.0002)/deformable3dgs(0.0007)
+                # if self.iteration > self.opt.densify_from_iter and self.iteration % self.opt.densification_interval == 0:
+                #     size_threshold = 20 if self.iteration > self.opt.opacity_reset_interval else None
+                #     self.gaussians.densify_and_prune(self.opt.densify_grad_threshold, 0.005, self.scene.cameras_extent, size_threshold)
+
+
+
+
+
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     print("reset opacity")
                     gaussians.reset_opacity()
