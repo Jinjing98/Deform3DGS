@@ -256,7 +256,8 @@ class EndoNeRF_Dataset(object):
         return refined_rgb, refined_depth
 
     
-    def get_sparse_pts(self, sample=True):
+    def get_sparse_pts(self, sample=True, init_mode = 'MAPF'):
+        assert init_mode in ['MAPF','skipMAPF']
         R, T = self.image_poses[0]
         depth = np.array(Image.open(self.depth_paths[0]))
         depth_mask = np.ones(depth.shape).astype(np.float32)
@@ -310,13 +311,12 @@ class EndoNeRF_Dataset(object):
         c2w = self.get_camera_poses((R, T))
         pts = self.transform_cam2cam(pts, c2w)
         
-        debug_skip_MAPF = False
-        # debug_skip_MAPF = True
-        if debug_skip_MAPF:
-            assert self.tool_mask == 'inverse'
+        if init_mode=='skipMAPF':
             pass
-        else:
+        elif init_mode == 'MAPF':
             pts, colors = self.search_pts_colors_with_motion(pts, colors, mask, c2w)#MAPF
+        else:
+            assert 0, NotImplementedError
         
         normals = np.zeros((pts.shape[0], 3))
 

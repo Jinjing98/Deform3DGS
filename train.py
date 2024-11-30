@@ -262,8 +262,13 @@ if __name__ == "__main__":
         config = mmcv.Config.fromfile(args.configs)
         args = merge_hparams(args, config)
         #update with tool_info automatically
+        expname_append = ''
         if hasattr(args,'tool_mask'):
-            setattr(args, 'expname', f'{args.expname}_{args.tool_mask}')
+            expname_append += f'_{args.tool_mask}'
+        if hasattr(args,'init_mode'):
+            expname_append += f'_{args.init_mode}'
+        setattr(args, 'expname', f'{args.expname}{expname_append}')
+        
         if 'pulling' in args.source_path or 'cutting' in args.source_path:
             pass
             print('TODO','nouse and inverse might be problematic---the data gt depth always masked tool region....')

@@ -32,8 +32,8 @@ class Scene:
         self.gaussians = gaussians
         
         #extend
-        print('TODO','remove, not necessary?')
-        self.tool_mask = args.tool_mask
+        # print('TODO','remove, not necessary?')
+        # self.tool_mask = args.tool_mask
         
         if load_iteration:
             if load_iteration == -1:
@@ -44,7 +44,8 @@ class Scene:
         
         if os.path.exists(os.path.join(args.source_path, "poses_bounds.npy")) and args.extra_mark == 'endonerf':
             scene_info = sceneLoadTypeCallbacks["endonerf"](args.source_path,
-                                                            tool_mask=self.tool_mask,
+                                                            tool_mask=args.tool_mask,
+                                                            init_mode=args.init_mode,
                                                             )
             print("Found poses_bounds.py and extra marks with EndoNeRf")
         elif os.path.exists(os.path.join(args.source_path, "point_cloud.obj")) or os.path.exists(os.path.join(args.source_path, "left_point_cloud.obj")):

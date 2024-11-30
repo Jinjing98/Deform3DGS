@@ -155,7 +155,8 @@ def generateCamerasFromTransforms(path, template_transformsfile, extension, maxt
                             time = time))
     return cam_infos
 
-def readEndoNeRFInfo(datadir,tool_mask = 'use'):
+def readEndoNeRFInfo(datadir,tool_mask = 'use',init_mode = None):
+    assert init_mode in ['MAPF','skipMAPF']
     # load camera infos
     from scene.endo_loader import EndoNeRF_Dataset
     endo_dataset = EndoNeRF_Dataset(

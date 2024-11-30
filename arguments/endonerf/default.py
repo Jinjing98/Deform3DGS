@@ -6,18 +6,9 @@ ModelParams = dict(
     #    support debug dst opt dur
     #    support run for muti splits
     #    support hard changes iters
+    init_mode = 'MAPF',#'MAPF', #'skipMAPF'
     tool_mask = 'inverse', #'use'(default) 'inverse' 'nouse'
 )
-#pulling
-#problem lies in get_sparse_pts: it will consider the 0 in depths beforehand, endonerf have missing wrong data there
-#use 28301
-#nouse 28301
-#inverse 0
-
-#SM
-#use 34281
-#nouse 36877
-#inverse 3027
 
 
 OptimizationParams = dict(
@@ -26,11 +17,23 @@ OptimizationParams = dict(
     deformation_lr_final = 0.0000016,
     deformation_lr_delay_mult = 0.01,
     iterations = 3000,
-    # iterations = 9000,#for inverse
     percent_dense = 0.01,
     opacity_reset_interval = 3000,
     position_lr_max_steps = 4000,
-    prune_interval = 3000
+    prune_interval = 3000, #? wrong-not-used?
+
+    #jj
+    densification_interval = 100,
+    densify_from_iter = 500,
+    densify_until_iter = 15_000,
+    densify_grad_threshold_coarse = 0.0002,
+    densify_grad_threshold_fine_init = 0.0002,
+    densify_grad_threshold_after = 0.0002,
+    pruning_from_iter = 500,
+    pruning_interval = 100,
+    opacity_threshold_coarse = 0.005,
+    opacity_threshold_fine_init = 0.005,
+    opacity_threshold_fine_after = 0.005,  
 )
 
 ModelHiddenParams = dict(

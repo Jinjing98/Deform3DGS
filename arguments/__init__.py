@@ -60,6 +60,7 @@ class ModelParams(ParamGroup):
 
         #extend
         self.tool_mask = None
+        self.init_mode = None
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
