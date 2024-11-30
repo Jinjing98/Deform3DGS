@@ -21,9 +21,9 @@ from torch.utils.data import Dataset
 
 class Scene:
 
-    gaussians : GaussianModel
+    gaussians : TissueGaussianModel
     
-    def __init__(self, args : ModelParams, gaussians : GaussianModel, load_iteration=None):
+    def __init__(self, args : ModelParams, gaussians : TissueGaussianModel, load_iteration=None):
         """b
         :param path: Path to colmap scene main folder.
         """
