@@ -12,6 +12,7 @@ submodules/
 assets/
 *.TTF
 
+*.ipynb
 # diff_rasterization/dist
 
 # submodules/*.so

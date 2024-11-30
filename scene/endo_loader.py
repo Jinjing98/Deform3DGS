@@ -257,7 +257,7 @@ class EndoNeRF_Dataset(object):
         return refined_rgb, refined_depth
 
     
-    def get_sparse_pts(self, sample=True, init_mode = 'MAPF'):
+    def get_sparse_pts(self, sample=True, init_mode = None):
         assert init_mode in ['MAPF','skipMAPF','rand']
         R, T = self.image_poses[0]
         depth = np.array(Image.open(self.depth_paths[0]))

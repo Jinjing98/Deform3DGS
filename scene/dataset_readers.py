@@ -156,7 +156,7 @@ def generateCamerasFromTransforms(path, template_transformsfile, extension, maxt
     return cam_infos
 
 def readEndoNeRFInfo(datadir,tool_mask = 'use',init_mode = None):
-    assert init_mode in ['MAPF','skipMAPF']
+    assert init_mode in ['MAPF','skipMAPF','rand']
     # load camera infos
     from scene.endo_loader import EndoNeRF_Dataset
     endo_dataset = EndoNeRF_Dataset(
@@ -176,7 +176,8 @@ def readEndoNeRFInfo(datadir,tool_mask = 'use',init_mode = None):
     print('take care! it keeps changing for each runs!...')
     ply_path = os.path.join(datadir, "points3d.ply")
 
-    xyz, rgb, normals = endo_dataset.get_sparse_pts()
+    # points init
+    xyz, rgb, normals = endo_dataset.get_sparse_pts(init_mode=init_mode)
     print('do we need to perform tool_mask here as well?')
     
     normals = np.random.random((xyz.shape[0], 3))
@@ -194,6 +195,7 @@ def readEndoNeRFInfo(datadir,tool_mask = 'use',init_mode = None):
     # get the maximum time
     maxtime = endo_dataset.get_maxtime()
     
+    # the pcd use for gaussians init
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,
