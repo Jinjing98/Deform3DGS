@@ -23,6 +23,7 @@ import copy
 import torch
 import torch.nn.functional as F
 from utils.general_utils import inpaint_depth, inpaint_rgb
+from utils.sh_utils import SH2RGB
 
 def generate_se3_matrix(translation, rotation_rad):
 
@@ -257,7 +258,7 @@ class EndoNeRF_Dataset(object):
 
     
     def get_sparse_pts(self, sample=True, init_mode = 'MAPF'):
-        assert init_mode in ['MAPF','skipMAPF']
+        assert init_mode in ['MAPF','skipMAPF','rand']
         R, T = self.image_poses[0]
         depth = np.array(Image.open(self.depth_paths[0]))
         depth_mask = np.ones(depth.shape).astype(np.float32)
@@ -312,12 +313,23 @@ class EndoNeRF_Dataset(object):
         pts = self.transform_cam2cam(pts, c2w)
         
         if init_mode=='skipMAPF':
+            print('alright consider mask')
             pass
         elif init_mode == 'MAPF':
+            print('alright consider mask')
             pts, colors = self.search_pts_colors_with_motion(pts, colors, mask, c2w)#MAPF
+        elif init_mode == 'rand':
+            #/////////////////////////////////////////
+            rand_num_pts = 100_000
+            print(f"tissue rand init(w.o concerning mask): generating random point cloud ({rand_num_pts})... w.o mask constrains?")
+            assert 0
+            # use the params from deformable-3d-gs synthetic Blender scenes
+            pts = np.random.random((rand_num_pts, 3)) * 2.6 - 1.3
+            shs = np.random.random((rand_num_pts, 3)) / 255.0
+            colors=SH2RGB(shs)
+            #//////////////////////
         else:
             assert 0, NotImplementedError
-        
         normals = np.zeros((pts.shape[0], 3))
 
         if sample:
