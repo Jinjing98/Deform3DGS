@@ -11,6 +11,35 @@
 
 import numpy as np
 import torch
+from PIL import Image
+import cv2
+#copy from streegs for its test rendering
+def save_img_torch(x, name='out.png'):
+    x = (x.clamp(0., 1.).detach().cpu().numpy() * 255).astype(np.uint8)
+    if x.shape[0] == 1 or x.shape[0] == 3:
+        x = x.transpose(1, 2, 0)
+    if x.shape[-1] == 1:
+        x = x.squeeze(-1)
+    
+    img = Image.fromarray(x)
+    img.save(name)
+#copy from streegs for its test rendering
+
+def visualize_depth_numpy(depth, minmax=None, cmap=cv2.COLORMAP_JET):
+    """
+    depth: (H, W)
+    """    
+    x = np.nan_to_num(depth) # change nan to 0
+    if minmax is None:
+        mi = np.min(x[x>0]) # get minimum positive depth (ignore background)
+        ma = np.max(x)
+    else:
+        mi,ma = minmax
+    x = (x-mi)/(ma-mi+1e-8) # normalize to 0~1
+    x = (255*x).astype(np.uint8)
+    x_ = cv2.applyColorMap(x, cmap)
+    return x_, [mi,ma]
+
 
 
 def tensor2array(tensor):
