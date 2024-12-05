@@ -125,21 +125,21 @@ def render_flow(viewpoint_camera, pc : TissueGaussianModel, pipe, bg_color : tor
             shs = pc.get_features
     else:
         colors_precomp = override_color
-
+ 
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-    rendered_image, radii, depth = rasterizer(
+    # rendered_image, radii, depth = rasterizer(
+    # rendered_image, radii, depth, _, _ = rasterizer( #latest: no means2d_densify; return 5 values
+    rendered_image, radii, depth,  = rasterizer( #latest: no means2d_densify; return 5 values
         means3D = means3D_final,
         means2D = means2D,
         #jj
-        means2D_densify=screenspace_points_densify,
-
+        # means2D_densify=screenspace_points_densify,
         shs = shs,
         colors_precomp = colors_precomp,
         opacities = opacity,
         scales = scales_final,
         rotations = rotations_final,
         cov3D_precomp = cov3D_precomp)
-
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
     return {"render": rendered_image,
