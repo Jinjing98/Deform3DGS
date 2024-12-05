@@ -10,7 +10,6 @@ import os.path as osp
 import numpy as np
 from PIL import Image
 from tqdm import tqdm
-from scene.cameras import Camera
 from typing import NamedTuple
 from utils.graphics_utils import focal2fov, fov2focal
 import glob
@@ -61,40 +60,6 @@ def update_extr(c2w, rotation_deg, radii_mm):
         extr = np.linalg.inv(se3_matrix) @ np.linalg.inv(c2w) # transform_C'_W = transform_C'_C @ (transform_W_C)^-1
         
         return np.linalg.inv(extr) # c2w
-    
-class CameraInfo(NamedTuple):
-    uid: int
-    R: np.array
-    T: np.array
-    FovY: np.array
-    FovX: np.array
-    image: np.array
-    depth: np.array
-    image_path: str
-    image_name: str
-    width: int
-    height: int
-    time : float
-    mask: np.array
-    Zfar: float
-    Znear: float
-
-# stree gs
-class streegs_CameraInfo(NamedTuple):
-    uid: int
-    R: np.array
-    T: np.array
-    FovY: np.array
-    FovX: np.array
-    K: np.array
-    image: np.array
-    image_path: str
-    image_name: str
-    width: int
-    height: int
-    metadata: dict = dict()
-    mask: np.array = None
-    acc_mask: np.array = None
 
 def normalize(v):
     """Normalize a vector."""
@@ -134,18 +99,24 @@ class EndoNeRF_Dataset(object):
             assert 0, self.root_dir
 
         self.load_meta()
-        print(f"meta data loaded, total image:{len(self.image_paths)}")
+        print(f"Scene_Meta_data+Cam_K_T loaded, total image:{len(self.image_paths)}")
         
         n_frames = len(self.image_paths)
         self.train_idxs = [i for i in range(n_frames) if (i-1) % test_every != 0]
         self.test_idxs = [i for i in range(n_frames) if (i-1) % test_every == 0]
         self.video_idxs = [i for i in range(n_frames)]
-        
+        #jj
+
+        self.camera_timestamps = {"0":{"train_timestamps": self.train_idxs,\
+                                "test_timestamps": self.test_idxs,
+                                "video_timestamps": self.test_idxs,
+                                }}
+
         self.maxtime = 1.0
 
     def load_meta(self):
         """
-        Load meta data from the dataset.
+        Load Scene_Meta_data+Cam_K_T loadedfrom the dataset.
         """
         
         # coordinate transformation 
@@ -208,14 +179,16 @@ class EndoNeRF_Dataset(object):
         assert len(self.depth_paths) == poses.shape[0], "the number of depth images should equal to number of poses"
         assert len(self.masks_paths) == poses.shape[0], "the number of masks should equal to the number of poses"
         
-    def format_infos(self, split):
-        cameras = []
-        
+    def get_caminfo(self, split):
+        # break down
+        # cameras = []
         if split == 'train': idxs = self.train_idxs
         elif split == 'test': idxs = self.test_idxs
         else:
             idxs = self.video_idxs
         
+        cam_infos = []
+        # for i in tqdm(range(len(exts))):
         for idx in tqdm(idxs):
             # mask / depth
             mask_path = self.masks_paths[idx]
@@ -227,14 +200,6 @@ class EndoNeRF_Dataset(object):
                 mask = np.array(mask)  
             else:
                 assert 0, NotImplementedError
-            
-            # # StereoMIS 
-            # if self.dataset == 'StereoMIS':
-            #     mask = np.array(mask)
-            #     if len(mask.shape) > 2:
-            #         mask = (mask[..., 0]>0).astype(np.uint8)
-            # else:
-            #     mask = 1 - np.array(mask) / 255.0
             if self.tool_mask == 'use':
                 mask = 1 - np.array(mask) / 255.0
             elif self.tool_mask == 'inverse':
@@ -253,6 +218,7 @@ class EndoNeRF_Dataset(object):
             depth = torch.from_numpy(depth)
             mask = self.transform(mask).bool()
             # color
+            img_path = self.image_paths[idx]
             color = np.array(Image.open(self.image_paths[idx]))/255.0
             image = self.transform(color)
             # times           
@@ -262,10 +228,79 @@ class EndoNeRF_Dataset(object):
             # fov
             FovX = focal2fov(self.focal[0], self.img_wh[0])
             FovY = focal2fov(self.focal[1], self.img_wh[1])
-            cameras.append(Camera(colmap_id=idx, R=R, T=T, FoVx=FovX, FoVy=FovY,image=image, depth=depth, mask=mask, gt_alpha_mask=None,
-                          image_name=f"{idx}", uid=idx, data_device=torch.device("cuda"), time=time,
-                          Znear=None, Zfar=None, K=self.K, h=self.img_wh[1], w=self.img_wh[0]))
-        return cameras
+            
+            #jj---go through misgs
+            # mostimporantly: faking the required cam_metadata by misgs
+            print('todo faking/fake some required cam_metadata by misgs')
+            pose = np.eye(4)
+            pose[:3,:3] = R
+            pose[:3,-1] = T
+            cam_metadata = dict()
+            cam_metadata['frame'] = image#frames[i]
+            cam_metadata['cam'] = idx,#cams[i]
+            cam_metadata['frame_idx'] = idx #frames_idx[i]
+            cam_metadata['ego_pose'] = pose
+            cam_metadata['extrinsic'] = self.K
+            cam_metadata['timestamp'] = time #cams_timestamps[i]
+            if idx in self.train_idxs:
+                cam_metadata['is_val'] = False
+                # self.camera_timestamps[idx]['train_timestamps'].append(time)
+            else:
+                cam_metadata['is_val'] = True
+                # self.camera_timestamps[idx]['test_timestamps'].append(time)
+
+            from scene.dataset_readers import CameraInfo
+
+            # mask is used by deform3dgs
+            # masks is used by misgs
+            # load more other masks in addtion to mask...
+            # if you want
+            masks = {
+                "original_mask":mask,
+                # "tissue":mask,
+                # "tool":~mask,
+            }
+
+            cam_info = CameraInfo(
+                    R=R, 
+                    T=T, 
+                    FovX=FovX, 
+                    FovY=FovY, 
+                    K=self.K,
+                    image=image, 
+                    image_name=f"{idx}", 
+                    metadata=cam_metadata,
+                    image_path=img_path,
+                    #exclusive to misgs
+                    id=idx, 
+                    # acc_mask
+                    #exclusive to deform3dgs
+                    uid=idx,
+                    time=time,
+                    mask=mask, 
+                    depth=depth, 
+                    gt_alpha_mask=None,
+                    data_device=torch.device("cuda"), 
+                    Znear=None, Zfar=None, 
+                    h=self.img_wh[1], w=self.img_wh[0],
+                    masks = masks,
+                )
+            cam_infos.append(cam_info)
+
+        return cam_infos
+
+
+    def format_infos(self, split):
+        #new version
+        # did exactily the same thing, 
+        # but break down for better extending
+        # mostimporantly: faking the required cam_metadata by misgs
+        cam_infos = self.get_caminfo(split=split)
+
+        from utils.camera_utils import cameraList_from_camInfos
+        #we rewrite the cameralist_from_caminfo func        
+        return cameraList_from_camInfos(cam_infos)
+
     
     def filling_pts_colors(self, filling_mask, ref_depth, ref_image):
          # bool
@@ -284,20 +319,7 @@ class EndoNeRF_Dataset(object):
         depth_mask[depth>inf_depth] = 0
         depth_mask[np.bitwise_and(depth<close_depth, depth!=0)] = 0
         depth_mask[depth==0] = 0
-
-        #debug depth_mask
-        # debug_en_depth = True
-        # debug_en_depth = False
-        # if debug_en_depth:
-        #     depth_mask = np.ones(depth.shape).astype(np.float32)
-
         depth[depth_mask==0] = 0
-        # if self.dataset == 'StereoMIS':
-        #     mask = np.array(Image.open(self.masks_paths[0]))
-        #     if len(mask.shape) > 2:
-        #         mask = (mask[..., 0]>0).astype(np.uint8) 
-        # else:
-        #     mask = 1 - np.array(Image.open(self.masks_paths[0]))/255.0
 
         #use mask in init too
         mask = Image.open(self.masks_paths[0])
@@ -320,11 +342,6 @@ class EndoNeRF_Dataset(object):
         assert len(mask.shape)==2
         mask = np.logical_and(depth_mask, mask)   
         color = np.array(Image.open(self.image_paths[0]))/255.0
-        # color_uint8 = np.array(Image.open(self.image_paths[0]), dtype=np.uint8)
-        # filling_mask = np.logical_not(mask)
-        # color, depth = self.filling_pts_colors(ref_image=color_uint8, ref_depth=depth, filling_mask=filling_mask)
-        # color = color/255.0
-        
         pts, colors, _ = self.get_pts_cam(depth, mask, color, disable_mask=False)
         c2w = self.get_camera_poses((R, T))
         pts = self.transform_cam2cam(pts, c2w)
@@ -338,8 +355,7 @@ class EndoNeRF_Dataset(object):
         elif init_mode == 'rand':
             #/////////////////////////////////////////
             rand_num_pts = 100_000
-            print(f"tissue rand init(w.o concerning mask): generating random point cloud ({rand_num_pts})... w.o mask constrains?")
-            assert 0
+            warnings.warn(f"tissue rand init(w.o concerning mask): generating random point cloud ({rand_num_pts})... w.o mask constrains?")
             # use the params from deformable-3d-gs synthetic Blender scenes
             pts = np.random.random((rand_num_pts, 3)) * 2.6 - 1.3
             shs = np.random.random((rand_num_pts, 3)) / 255.0
@@ -489,3 +505,90 @@ class EndoNeRF_Dataset(object):
         pts_wld = np.transpose(pose @ np.transpose(pts_cam_homo))
         xyz = pts_wld[:, :3]
         return xyz
+    def load_other_obj_meta(self,cameras = [0]):
+        print('todo', 'fake object obj traklets etc just for going through')
+        scene_metadata = {}
+        #fake:
+        obj_tracklets = None
+        tracklet_timestamps = None
+        obj_info = None
+        num_frames = None
+        obj_tracklets = None
+        exts = []
+
+        scene_metadata = dict()
+        scene_metadata['obj_tracklets'] = obj_tracklets
+        scene_metadata['tracklet_timestamps'] = tracklet_timestamps
+        scene_metadata['obj_meta'] = obj_info
+        scene_metadata['num_images'] = len(exts)
+        # scene_metadata['num_cams'] = len(cfg.data.cameras)
+        scene_metadata['num_cams'] = len(cameras)
+        scene_metadata['num_frames'] = num_frames
+
+        #most important for misgs
+        print('most important for misgs')
+        scene_metadata['camera_timestamps'] = self.camera_timestamps
+
+        # 5. We write scene center and radius to scene metadata    
+        # scene_metadata['scene_center'] = nerf_normalization['center']
+        # scene_metadata['scene_radius'] = nerf_normalization['radius']
+        # print(f'Scene extent: {nerf_normalization["radius"]}')
+
+        # # Get sphere center
+        # lidar_ply_path = os.path.join(cfg.model_path, 'input_ply/points3D_lidar.ply')
+        # if os.path.exists(lidar_ply_path):
+        #     pass
+        #     sphere_pcd: BasicPointCloud = fetchPly(lidar_ply_path)
+        # else:
+        #     pass
+        #     sphere_pcd: BasicPointCloud = fetchPly(bkgd_ply_path)
+        
+        # sphere_normalization = get_Sphere_Norm(sphere_pcd.points)
+        # scene_metadata['sphere_center'] = sphere_normalization['center']
+        # scene_metadata['sphere_radius'] = sphere_normalization['radius']
+        # print(f'Sphere extent: {sphere_normalization["radius"]}')
+        return scene_metadata
+    
+
+    # jj
+    def get_endonerf_cam_meta(self,cameras = [0]):
+        # assert 0, NotImplementedError
+        metadata = {}#cam_metadata
+        return metadata
+        # for cam in cfg.data.get('cameras', [0, 1, 2]):
+        # for cam in cameras:
+        #     camera_timestamps[cam] = dict()
+        #     camera_timestamps[cam]['train_timestamps'] = []
+        #     camera_timestamps[cam]['test_timestamps'] = []   
+        # for i in tqdm(range(len(exts))):
+        #     metadata = dict()
+        #     metadata['frame'] = frames[i]
+        #     metadata['cam'] = cams[i]
+        #     metadata['frame_idx'] = frames_idx[i]
+        #     metadata['ego_pose'] = pose
+        #     metadata['extrinsic'] = ext
+        #     metadata['timestamp'] = cams_timestamps[i]
+
+        #     if frames_idx[i] in train_frames:
+        #         metadata['is_val'] = False
+        #         camera_timestamps[cams[i]]['train_timestamps'].append(cams_timestamps[i])
+        #     else:
+        #         metadata['is_val'] = True
+        #         camera_timestamps[cams[i]]['test_timestamps'].append(cams_timestamps[i])
+            
+        #     # load dynamic mask
+        #     if load_dynamic_mask:
+        #         # dynamic_mask_path = os.path.join(dynamic_mask_dir, f'{image_name}.png')
+        #         # obj_bound = (cv2.imread(dynamic_mask_path)[..., 0]) > 0.
+        #         # obj_bound = Image.fromarray(obj_bound)
+        #         metadata['obj_bound'] = Image.fromarray(obj_bounds[i])
+        #     #do we need cam meta?/////////////
+        #     mask = None        
+        #     cam_info = CameraInfo(
+        #         uid=i, R=R, T=T, FovY=FovY, FovX=FovX, K=K,
+        #         image=image, image_path=image_path, image_name=image_name,
+        #         width=width, height=height, 
+        #         mask=mask,
+        #         metadata=metadata)
+
+        #     # sys.stdout.write('\n')
