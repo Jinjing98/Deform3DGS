@@ -131,7 +131,11 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, skip_video: bool, reconstruct_train: bool, reconstruct_test: bool, reconstruct_video: bool):
     with torch.no_grad():
         gaussians = TissueGaussianModel(dataset.sh_degree, hyperparam)
-        scene = Scene(dataset, gaussians, load_iteration=iteration)
+        # scene = Scene(dataset, gaussians, load_iteration=iteration)
+        # 1 step to two
+        scene = Scene(dataset)
+        scene.gs_init(gaussians_or_controller=gaussians, load_iteration=iteration,
+                      reset_camera_extent=dataset.camera_extent)
 
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
