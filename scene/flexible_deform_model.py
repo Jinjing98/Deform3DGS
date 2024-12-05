@@ -485,8 +485,24 @@ class TissueGaussianModel:
         self.prune_points(prune_mask)
         torch.cuda.empty_cache()
 
+    def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size, 
+                          skip_densify = False, skip_prune = False):
+        grads = self.xyz_gradient_accum[:, 0:1] / self.denom
+        grads[grads.isnan()] = 0.0
+        # Clone and Split: densify  
+        if not skip_densify:  
+            self.densify_and_clone(grads, max_grad, extent)
+            self.densify_and_split(grads, max_grad, extent)
+        # Prune 
+        # no need to reset: stree is redundant procedure
+        if not skip_prune:  
+            self.prune(max_grad, min_opacity, extent, max_screen_size)
+        torch.cuda.empty_cache()
+        return {},{}
+        # return self.scalar_dict, self.tensor_dict
+    
     #jj: perform the same densify+prune+reset_opa as the training()
-    def densify_and_prune(self,
+    def densify_and_prune_v0(self,
                           iteration, 
                           opt, 
                           cameras_extent,
