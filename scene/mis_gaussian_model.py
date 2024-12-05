@@ -300,7 +300,10 @@ class MisGaussianModel(nn.Module):
                 obj_model: GaussianModelActor = getattr(self, obj_name)
                 track_id = obj_model.track_id
                 obj_rot = self.actor_pose.get_tracking_rotation(track_id, self.viewpoint_camera)
-                obj_trans = self.actor_pose.get_tracking_translation(track_id, self.viewpoint_camera)                
+                # it will use the trans info of the next two frames
+                obj_trans = self.actor_pose.get_tracking_translation(track_id, self.viewpoint_camera)  
+                # internally call:  get_tracking_translation_(self, track_id, timestamp)
+                # which learn the drift only--- 
                 ego_pose = self.viewpoint_camera.ego_pose
                 ego_pose_rot = matrix_to_quaternion(ego_pose[:3, :3].unsqueeze(0)).squeeze(0)
                 obj_rot = quaternion_raw_multiply(ego_pose_rot.unsqueeze(0), obj_rot.unsqueeze(0)).squeeze(0)

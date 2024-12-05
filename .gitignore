@@ -23,7 +23,7 @@ assets/
 
 reconstruct/
 
-*.ipynb
+notebooks/*.ipynb
 # diff_rasterization/dist
 
 # submodules/*.so
