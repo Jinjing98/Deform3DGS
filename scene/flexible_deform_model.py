@@ -289,7 +289,7 @@ class TissueGaussianModel:
         self._coefs = nn.Parameter(torch.tensor(coefs, dtype=torch.float, device="cuda").requires_grad_(True))
         self.active_sh_degree = self.max_sh_degree
 
-    def save_ply(self, path):
+    def save_ply(self, path, only_make = False):
         mkdir_p(os.path.dirname(path))
 
         xyz = self._xyz.detach().cpu().numpy()
@@ -307,7 +307,9 @@ class TissueGaussianModel:
                                      coefs), axis=1) # FDM added
         elements[:] = list(map(tuple, attributes))
         el = PlyElement.describe(elements, 'vertex')
-        PlyData([el]).write(path)
+        if not only_make:
+            PlyData([el]).write(path)
+        return el
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}
@@ -483,6 +485,51 @@ class TissueGaussianModel:
         self.prune_points(prune_mask)
         torch.cuda.empty_cache()
 
+    #jj: perform the same densify+prune+reset_opa as the training()
+    def densify_and_prune(self,
+                          iteration, 
+                          opt, 
+                          cameras_extent,
+                          white_background,
+                          visibility_filter,
+                          viewspace_point_tensor_grad,
+                          radii,
+                          ):
+        '''
+         perform the same densify+prune+reset_opa as the training() of deform3dgs
+        '''
+        # Densification
+        if iteration < opt.densify_until_iter : 
+            # Keep track of max radii in image-space for pruning
+            self.max_radii2D[visibility_filter] = torch.max(self.max_radii2D[visibility_filter], radii[visibility_filter])
+            self.add_densification_stats(viewspace_point_tensor_grad, visibility_filter)
+
+
+            opacity_threshold = opt.opacity_threshold_fine_init - iteration*(opt.opacity_threshold_fine_init - opt.opacity_threshold_fine_after)/(opt.densify_until_iter)  
+            densify_threshold = opt.densify_grad_threshold_fine_init - iteration*(opt.densify_grad_threshold_fine_init - opt.densify_grad_threshold_after)/(opt.densify_until_iter )  
+
+            if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0 :
+                size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+                self.densify(densify_threshold, opacity_threshold, cameras_extent, size_threshold)
+                
+            if iteration > opt.pruning_from_iter and iteration % opt.pruning_interval == 0:
+                size_threshold = 40 if iteration > opt.opacity_reset_interval else None
+                self.prune(densify_threshold, opacity_threshold, cameras_extent, size_threshold)
+                
+            # #from deformable 3d gs---surg-gs(0.0003/0.0002)/deformable3dgs(0.0007)
+            # if use deformable3dgs reset opacity scheme
+            # if iteration > self.opt.densify_from_iter and iteration % self.opt.densification_interval == 0:
+            #     size_threshold = 20 if iteration > self.opt.opacity_reset_interval else None
+            #     self.gaussians.densify_and_prune(self.opt.densify_grad_threshold, 0.005, self.scene.cameras_extent, size_threshold)
+
+            if iteration % opt.opacity_reset_interval == 0 or (white_background and iteration == opt.densify_from_iter):
+                print("reset opacity")
+                self.reset_opacity()
+        torch.cuda.empty_cache()
+        scalar_dict = {}
+        tensor_dict = {}
+        return scalar_dict, tensor_dict
+    
     def standard_constaint(self):
         
         means3D = self._xyz.detach()
@@ -633,3 +680,34 @@ class TissueGaussianModel:
     # FDM added
     def compute_regulation(self, time_smoothness_weight, l1_time_planes_weight, plane_tv_weight):
         return plane_tv_weight * self._plane_regulation() + time_smoothness_weight * self._time_regulation() + l1_time_planes_weight * self._l1_regulation()
+
+    #jj extend--so that can be called by the misGS controller
+    def update_optimizer(self):
+        self.optimizer.step()
+        self.optimizer.zero_grad(set_to_none=True)
+
+    #jj extend--so that can be called by the misGS controller
+    def state_dict(self, is_final=False):
+        state_dict = {
+            'xyz': self._xyz,
+            'feature_dc': self._features_dc,
+            'feature_rest': self._features_rest,
+            'scaling': self._scaling,
+            'rotation': self._rotation,
+            'opacity': self._opacity,
+            # 'semantic': self._semantic,
+        }
+        
+        if not is_final:
+            state_dict_extra = {
+                'spatial_lr_scale': self.spatial_lr_scale,
+                'denom': self.denom,
+                'max_radii2D': self.max_radii2D,
+                'xyz_gradient_accum': self.xyz_gradient_accum,
+                'active_sh_degree': self.active_sh_degree,
+                'optimizer': self.optimizer.state_dict(),
+            }
+            
+            state_dict.update(state_dict_extra)
+        
+        return state_dict
