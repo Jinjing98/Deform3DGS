@@ -14,26 +14,60 @@ from torch import nn
 import numpy as np
 from utils.graphics_utils import getWorld2View2, getProjectionMatrix, getProjectionMatrix2
 
-
-    
 class Camera(nn.Module):
-    def __init__(self, colmap_id, R, T, FoVx, FoVy, image, depth, mask, gt_alpha_mask,
-                 image_name, uid,
-                 trans=np.array([0.0, 0.0, 0.0]), scale=1.0, 
-                 data_device = "cuda", time = 0, Znear=None, Zfar=None, 
-                 K=None, h=None, w=None
-                 ):
+    def __init__(
+        self, 
+        id,
+        R, T, 
+        FoVx, FoVy, K,
+        image, image_name, 
+        trans = np.array([0.0, 0.0, 0.0]), 
+        scale = 1.0,
+        metadata = dict(),
+        masks = dict(),
+
+        # extend
+        depth=None, 
+        gt_alpha_mask=None,
+        data_device=None, time=None,
+        Znear=None, Zfar=None, 
+        h=None, w=None,
+        mask = None,
+        colmap_id = None,
+        uid = None,
+    ):
         super(Camera, self).__init__()
 
-        self.uid = uid
-        self.colmap_id = colmap_id
+        #shared
         self.R = R
         self.T = T
         self.FoVx = FoVx
         self.FoVy = FoVy
         self.image_name = image_name
+        self.trans, self.scale = trans, scale
+
+
+        #exlusive to deform3dgs
+        self.uid = uid
+        self.colmap_id = colmap_id
         self.time = time
         self.mask = mask
+
+        # exclusive for misgs
+        self.K = K
+        self.meta = metadata
+        self.id = id
+        for name, mask in masks.items():
+            setattr(self, name, mask)
+        if 'ego_pose' in self.meta.keys():
+            self.ego_pose = torch.from_numpy(self.meta['ego_pose']).float().cuda()
+            del self.meta['ego_pose']
+            
+        if 'extrinsic' in self.meta.keys():
+            self.extrinsic = torch.from_numpy(self.meta['extrinsic']).float().cuda()
+            del self.meta['extrinsic']
+
+        #again shared
         try:
             self.data_device = torch.device(data_device)
         except Exception as e:
@@ -61,18 +95,74 @@ class Camera(nn.Module):
             # StereoMIS
             self.zfar = 250
             self.znear= 0.03
-            
-        self.trans = trans
-        self.scale = scale
+
+            # streetgs waymo
+            # self.zfar = 1000.0
+            # self.znear = 0.001
 
         self.world_view_transform = torch.tensor(getWorld2View2(R, T, trans, scale)).transpose(0, 1)
         if K is None or h is None or w is None:
+            assert 0
             self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).transpose(0,1)
         else:
             self.projection_matrix = getProjectionMatrix2(znear=self.znear, zfar=self.zfar, K=K, h = h, w=w).transpose(0,1)
         
         self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0)
         self.camera_center = self.world_view_transform.inverse()[3, :3]
+
+
+
+
+        # self.original_image = image.clamp(0, 1)                
+        # self.image_height, self.image_width = self.original_image.shape[1], self.original_image.shape[2]
+        # self.zfar = 1000.0
+        # self.znear = 0.001
+        # self.world_view_transform = torch.tensor(getWorld2View2(R, T, trans, scale)).transpose(0, 1).cuda()
+        
+        # if self.K is not None:
+        #     self.projection_matrix = getProjectionMatrixK(znear=self.znear, zfar=self.zfar, K=self.K, H=self.image_height, W=self.image_width).transpose(0,1).cuda()
+        #     self.K = torch.from_numpy(self.K).float().cuda()
+        # else:
+        #     self.projection_matrix = getProjectionMatrix(znear=self.znear, zfar=self.zfar, fovX=self.FoVx, fovY=self.FoVy).transpose(0,1).cuda()
+
+        # self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0)
+        # self.camera_center = self.world_view_transform.inverse()[3, :3]
+        
+
+
+
+        #load for shared with deform3dgs
+
+                
+    def set_extrinsic(self, c2w):
+        w2c = np.linalg.inv(c2w)
+        R = w2c[:3, :3].T
+        T = w2c[:3, 3]
+        
+        # set R, T
+        self.R = R
+        self.T = T
+        
+        # change attributes associated with R, T
+        self.world_view_transform = torch.tensor(getWorld2View2(R, T, self.trans, self.scale)).transpose(0, 1).cuda()
+        self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0)
+        self.camera_center = self.world_view_transform.inverse()[3, :3]
+    
+    def set_intrinsic(self, K):
+        self.K = torch.from_numpy(K).float().cuda()
+        self.projection_matrix = getProjectionMatrixK(znear=self.znear, zfar=self.zfar, K=self.K, H=self.image_height, W=self.image_width).transpose(0,1).cuda()
+        self.full_proj_transform = (self.world_view_transform.unsqueeze(0).bmm(self.projection_matrix.unsqueeze(0))).squeeze(0)
+    
+    def get_extrinsic(self):
+        w2c = np.eye(4)
+        w2c[:3, :3] = self.R.T
+        w2c[:3, 3] = self.T
+        c2w = np.linalg.inv(w2c)
+        return c2w
+    
+    def get_intrinsic(self):
+        ixt = self.K.cpu().numpy()
+        return ixt
 
 class MiniCam:
     def __init__(self, width, height, fovy, fovx, znear, zfar, world_view_transform, full_proj_transform, time):
