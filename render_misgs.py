@@ -317,7 +317,7 @@ class MisGaussianRenderer():
         )  
         rendered_acc =  torch.empty([0]) #torch.empty_like(rendered_depth)
         rendered_feature = torch.Tensor([])#torch.empty([0])
-        assert 0,means2D.shape
+        assert 0,rendered_color
         #////////////////////////////////////////////////////////////////////////////////
         # sys.path = our_sys_path_container
 
@@ -359,6 +359,8 @@ class MisGaussianRenderer():
             "radii": radii
         }
         
+
+
         result.update(rendered_feature_dict)
         
         return result

@@ -161,9 +161,6 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         else:
             mask = torch.ones_like(gt_image[0:1]).bool()
 
-        print('*************************************************')
-        print(f"{hasattr(viewpoint_cam, 'original_mask')} {mask.sum()} {mask.numel()}")
-
         if hasattr(viewpoint_cam, 'original_sky_mask'):
             sky_mask = viewpoint_cam.original_sky_mask.cuda()
         else:
@@ -179,9 +176,8 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             
         if  use_streetgs_render:
             render_pkg = gaussians_renderer.render(viewpoint_cam, controller)
-            for key,value in render_pkg.items():
-                print(value,key)
-
+            # for key,value in render_pkg.items():
+            #     print(value.shape,key)
             # assert 0
             try:
                 image, acc, viewspace_point_tensor, visibility_filter, radii = render_pkg["rgb"], render_pkg['acc'], \
@@ -201,7 +197,9 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             acc = torch.zeros_like(depth)
             print('todo not sure acc...')
 
-
+            # for key,value in render_pkg.items():
+            #     print(value.shape,key)
+            # assert 0
 
 
         scalar_dict = dict()
