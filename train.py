@@ -159,36 +159,37 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
             # #//////////////////////////////////////
             # # Densification-test the wrarped densify+prune+reset_opacity of TissueGS model
             # if iteration < opt.densify_until_iter :
-            #     gaussians.densify_and_prune(iteration = iteration, 
+            #     gaussians.densify_and_prune_v0(iteration = iteration, 
             #                                 opt = opt, 
             #                                 cameras_extent = scene.cameras_extent,
             #                                 white_background = dataset.white_background,
             #                                 visibility_filter = visibility_filter,
             #                                 viewspace_point_tensor_grad = viewspace_point_tensor_grad,
             #                                 radii = radii)
-            # #//////////////////////////////////////
+            
+            #//////////////////////////////////
+
             # Densification
             if iteration < opt.densify_until_iter :
                 # Keep track of max radii in image-space for pruning
                 gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
                 gaussians.add_densification_stats(viewspace_point_tensor_grad, visibility_filter)
-
   
                 opacity_threshold = opt.opacity_threshold_fine_init - iteration*(opt.opacity_threshold_fine_init - opt.opacity_threshold_fine_after)/(opt.densify_until_iter)  
                 densify_threshold = opt.densify_grad_threshold_fine_init - iteration*(opt.densify_grad_threshold_fine_init - opt.densify_grad_threshold_after)/(opt.densify_until_iter )  
 
+                # densify and prune
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0 :
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                    gaussians.densify(densify_threshold, opacity_threshold, scene.cameras_extent, size_threshold)
-                    
+                    gaussians.densify_and_prune(densify_threshold, opacity_threshold, 
+                                                scene.cameras_extent, size_threshold,
+                                                skip_prune = True)
                 if iteration > opt.pruning_from_iter and iteration % opt.pruning_interval == 0:
                     size_threshold = 40 if iteration > opt.opacity_reset_interval else None
-                    gaussians.prune(densify_threshold, opacity_threshold, scene.cameras_extent, size_threshold)
-                    
-                # #from deformable 3d gs---surg-gs(0.0003/0.0002)/deformable3dgs(0.0007)
-                # if self.iteration > self.opt.densify_from_iter and self.iteration % self.opt.densification_interval == 0:
-                #     size_threshold = 20 if self.iteration > self.opt.opacity_reset_interval else None
-                #     self.gaussians.densify_and_prune(self.opt.densify_grad_threshold, 0.005, self.scene.cameras_extent, size_threshold)
+                    gaussians.densify_and_prune(densify_threshold, opacity_threshold, 
+                                                scene.cameras_extent, size_threshold,
+                                                skip_densify = True)
+                # reset opacity
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     print("reset opacity")
                     gaussians.reset_opacity()
@@ -196,6 +197,38 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
             if iteration < opt.iterations:
                 gaussians.optimizer.step()
                 gaussians.optimizer.zero_grad(set_to_none = True)
+            # #//////////////////////////////////////
+            # # Densification
+            # if iteration < opt.densify_until_iter :
+            #     # Keep track of max radii in image-space for pruning
+            #     gaussians.max_radii2D[visibility_filter] = torch.max(gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
+            #     gaussians.add_densification_stats(viewspace_point_tensor_grad, visibility_filter)
+
+  
+            #     opacity_threshold = opt.opacity_threshold_fine_init - iteration*(opt.opacity_threshold_fine_init - opt.opacity_threshold_fine_after)/(opt.densify_until_iter)  
+            #     densify_threshold = opt.densify_grad_threshold_fine_init - iteration*(opt.densify_grad_threshold_fine_init - opt.densify_grad_threshold_after)/(opt.densify_until_iter )  
+
+            #     if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0 :
+            #         size_threshold = 20 if iteration > opt.opacity_reset_interval else None
+            #         gaussians.densify(densify_threshold, opacity_threshold, scene.cameras_extent, size_threshold)
+                    
+            #     if iteration > opt.pruning_from_iter and iteration % opt.pruning_interval == 0:
+            #         size_threshold = 40 if iteration > opt.opacity_reset_interval else None
+            #         gaussians.prune(densify_threshold, opacity_threshold, scene.cameras_extent, size_threshold)
+                    
+            #     # #from deformable 3d gs---surg-gs(0.0003/0.0002)/deformable3dgs(0.0007)
+            #     # if self.iteration > self.opt.densify_from_iter and self.iteration % self.opt.densification_interval == 0:
+            #     #     size_threshold = 20 if self.iteration > self.opt.opacity_reset_interval else None
+            #     #     self.gaussians.densify_and_prune(self.opt.densify_grad_threshold, 0.005, self.scene.cameras_extent, size_threshold)
+                
+            #     if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
+            #         print("reset opacity")
+            #         gaussians.reset_opacity()   
+            #          
+            # # Optimizer step
+            # if iteration < opt.iterations:
+            #     gaussians.optimizer.step()
+            #     gaussians.optimizer.zero_grad(set_to_none = True)
 
             if (iteration in checkpoint_iterations):
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
@@ -269,7 +302,7 @@ if __name__ == "__main__":
     # torch.set_default_tensor_type('torch.FloatTensor')
     torch.cuda.empty_cache()
     use_stree_grouping_strategy = True
-    # use_stree_grouping_strategy = False
+    use_stree_grouping_strategy = False
     if use_stree_grouping_strategy:
         use_streetgs_render = True #fail
         use_streetgs_render = False
