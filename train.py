@@ -72,8 +72,9 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
         gaussians.update_learning_rate(iteration)
         # Every 1000 its we increase the levels of SH up to a maximum degree
         if iteration % 500 == 0:
+        # if iteration % 2 == 0:
             gaussians.oneupSHdegree()
-
+            # assert 0, gaussians.active_sh_degree
         idx = randint(0, len(viewpoint_stack)-1)
         viewpoint_cams = [viewpoint_stack[idx]]
 
@@ -155,6 +156,17 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
                 scene.save(iteration, 'fine')
             timer.start()
             
+            # #//////////////////////////////////////
+            # # Densification-test the wrarped densify+prune+reset_opacity of TissueGS model
+            # if iteration < opt.densify_until_iter :
+            #     gaussians.densify_and_prune(iteration = iteration, 
+            #                                 opt = opt, 
+            #                                 cameras_extent = scene.cameras_extent,
+            #                                 white_background = dataset.white_background,
+            #                                 visibility_filter = visibility_filter,
+            #                                 viewspace_point_tensor_grad = viewspace_point_tensor_grad,
+            #                                 radii = radii)
+            # #//////////////////////////////////////
             # Densification
             if iteration < opt.densify_until_iter :
                 # Keep track of max radii in image-space for pruning
@@ -177,15 +189,9 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
                 # if self.iteration > self.opt.densify_from_iter and self.iteration % self.opt.densification_interval == 0:
                 #     size_threshold = 20 if self.iteration > self.opt.opacity_reset_interval else None
                 #     self.gaussians.densify_and_prune(self.opt.densify_grad_threshold, 0.005, self.scene.cameras_extent, size_threshold)
-
-
-
-
-
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):
                     print("reset opacity")
                     gaussians.reset_opacity()
-                    
             # Optimizer step
             if iteration < opt.iterations:
                 gaussians.optimizer.step()
@@ -196,27 +202,32 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
 def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, expname, extra_mark):
-    tb_writer = prepare_output_and_logger(expname)
+    assert expname == args.model_path, f'{expname} {args.model_path}'
+    tb_writer = prepare_output_and_logger(model_path=expname, write_args=args)
     gaussians = TissueGaussianModel(dataset.sh_degree, hyper)
-    dataset.model_path = args.model_path
+    dataset.model_path = args.model_path# dataset save model param
     timer = Timer()
-    scene = Scene(dataset, gaussians)
+    # scene = Scene(dataset, gaussians)
+    # convert 1 to 2 steps
+    scene = Scene(dataset)
+    scene.gs_init(gaussians_or_controller=gaussians,
+                  reset_camera_extent=dataset.camera_extent)
     timer.start()
+    #actual data loading
     scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_iterations,
                          checkpoint_iterations, checkpoint, debug_from,
                          gaussians, scene, tb_writer, opt.iterations,timer)
 
-def prepare_output_and_logger(expname):    
-    if not args.model_path:
-        unique_str = expname
-        args.model_path = os.path.join("./output/", unique_str)
-    print("Output folder: {}".format(args.model_path))
-    os.makedirs(args.model_path, exist_ok = True)
-    with open(os.path.join(args.model_path, "cfg_args"), 'w') as cfg_log_f:
-        cfg_log_f.write(str(Namespace(**vars(args))))
+def prepare_output_and_logger(model_path,write_args = None):    
+    if not model_path:
+        assert 0, model_path
+    print("Output folder: {}".format(model_path))
+    os.makedirs(model_path, exist_ok = True)
+    with open(os.path.join(model_path, "cfg_args"), 'w') as cfg_log_f:
+        cfg_log_f.write(str(Namespace(**vars(write_args))))
     tb_writer = None
     if TENSORBOARD_FOUND:
-        tb_writer = SummaryWriter(args.model_path)
+        tb_writer = SummaryWriter(model_path)
     else:
         print("Tensorboard not available: not logging progress")
     return tb_writer
@@ -229,8 +240,14 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
         tb_writer.add_scalar(f'iter_time', elapsed, iteration)
 
         #jj    
-        tb_writer.add_scalar('total_points', scene.gaussians.get_xyz.shape[0], iteration)
-        # tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians.get_opacity, iteration)
+        from scene.mis_gaussian_model import MisGaussianModel
+        if isinstance(scene.gaussians_or_controller, MisGaussianModel):
+            print('todo During traning report we only do tissue')
+            tb_writer.add_scalar('total_points', scene.gaussians_or_controller.tissue.get_xyz.shape[0], iteration)
+        else:
+            tb_writer.add_scalar('total_points', scene.gaussians_or_controller.get_xyz.shape[0], iteration)
+
+        # tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians_or_controller.get_opacity, iteration)
         # torch.cuda.empty_cache()
 
 
@@ -243,9 +260,16 @@ def setup_seed(seed):
      torch.backends.cudnn.deterministic = True
 
 if __name__ == "__main__":
+    
+    
+    # import os
+    # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
+
     # Set up command line argument parser
     # torch.set_default_tensor_type('torch.FloatTensor')
     torch.cuda.empty_cache()
+    use_stree_grouping_strategy = True
+    # use_stree_grouping_strategy = False
     parser = ArgumentParser(description="Training script parameters")
     setup_seed(6666)
     lp = ModelParams(parser)
@@ -257,14 +281,13 @@ if __name__ == "__main__":
     parser.add_argument('--debug_from', type=int, default=-1)
     parser.add_argument('--detect_anomaly', action='store_true', default=False)
     parser.add_argument("--test_iterations", nargs="+", type=int, default=[i*500 for i in range(0,120)])
-    parser.add_argument("--save_iterations", nargs="+", type=int, default=[3000,])
-    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[])
+    parser.add_argument("--save_iterations", nargs="+", type=int, default=[0,1])
+    parser.add_argument("--checkpoint_iterations", nargs="+", type=int, default=[1])
     parser.add_argument("--quiet", action="store_true")
     parser.add_argument("--start_checkpoint", type=str, default = None)
     parser.add_argument("--expname", type=str, default = "endonerf/pulling_fdm")
     parser.add_argument("--configs", type=str, default = "arguments/endonerf/default.py")
     args = parser.parse_args(sys.argv[1:])
-    args.save_iterations.append(args.iterations)
     if args.configs:
         import mmcv
         from utils.params_utils import merge_hparams
@@ -282,7 +305,11 @@ if __name__ == "__main__":
             pass
             print('TODO','nouse and inverse might be problematic---the data gt depth always masked tool region....')
             # assert args.tool_mask == "use",'nouse and inverse might be problematic---the data gt depth always masked tool region....'
-    
+    else:
+        assert 0
+
+    args.save_iterations.append(args.iterations)
+    args.model_path = args.expname#jj--use by misgs
     print("Optimizing " + args.model_path)
 
     # Initialize system state (RNG)
@@ -291,8 +318,11 @@ if __name__ == "__main__":
     # Start GUI server, configure and run training
     # network_gui.init(args.ip, args.port)
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
-    training(lp.extract(args), hp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, \
-        args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname, args.extra_mark)
-
+    if not use_stree_grouping_strategy:
+        training(lp.extract(args), hp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, \
+            args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname, args.extra_mark)
+    else:
+        from train_utils_misgs import training_misgsmodel
+        training_misgsmodel(args)
     # All done
-    print("\nTraining complete.")
+    print("\nTraining complete.", args.model_path)
