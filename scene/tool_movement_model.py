@@ -1,4 +1,4 @@
-from gaussian_model_base import GaussianModelBase
+from scene.gaussian_model_base import GaussianModelBase
 class GaussianModelActor(GaussianModelBase):
     def __init__(
         self, 

@@ -23,8 +23,11 @@ from utils.graphics_utils import BasicPointCloud
 from utils.general_utils import strip_symmetric, build_scaling_rotation
 from scene.regulation import compute_plane_smoothness
 from typing import Tuple
+from utils.general_utils import strip_symmetric,build_scaling_rotation,quaternion_to_matrix
+from scene.cameras import Camera
 class GaussianModelBase(nn.Module):
     def __init__(self, model_name='background', num_classes=1):
+        assert 0
         super().__init__()
         cfg_model = cfg.model.gaussian
         self.model_name = model_name
@@ -40,6 +43,8 @@ class GaussianModelBase(nn.Module):
         default_max_sh_degree = cfg_model.get('sh_degree')
         if self.model_name == 'background':
             self.max_sh_degree = cfg_model.get('sh_degree_background', default_max_sh_degree)
+        elif self.model_name == 'tissue':
+            self.max_sh_degree = cfg_model.get('sh_degree_sky', default_max_sh_degree)
         elif self.model_name == 'sky':
             self.max_sh_degree = cfg_model.get('sh_degree_sky', default_max_sh_degree)
         else:
@@ -543,40 +548,44 @@ class GaussianModelBase(nn.Module):
             "rotation" : new_rotation,
             "semantic" : new_semantic,
         })
+    
+    # have ur own for each component
+    # def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
+    #     grads = self.xyz_gradient_accum[:, 0:1] / self.denom
+    #     grads[grads.isnan()] = 0.0
         
-    def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size):
-        grads = self.xyz_gradient_accum[:, 0:1] / self.denom
-        grads[grads.isnan()] = 0.0
-        
-        # stree added
-        self.scalar_dict.clear()
-        self.scalar_dict['points_total'] = self.get_xyz.shape[0]
-        print(f'Number of current gaussians: {self.get_xyz.shape[0]}')
+    #     # stree added
+    #     self.scalar_dict.clear()
+    #     self.scalar_dict['points_total'] = self.get_xyz.shape[0]
+    #     print(f'Number of current gaussians: {self.get_xyz.shape[0]}')
 
-        # Clone and Split        
-        self.densify_and_clone(grads, max_grad, extent)
-        self.densify_and_split(grads, max_grad, extent)
+    #     # Clone and Split        
+    #     self.densify_and_clone(grads, max_grad, extent)
+    #     self.densify_and_split(grads, max_grad, extent)
 
-        # Prune 
-        prune_mask = (self.get_opacity < min_opacity).squeeze()
-        if max_screen_size:
-            # stree added/changed: differ from 4dgs
-            big_points_vs = self.max_radii2D > max_screen_size
-            big_points_ws = self.get_scaling.max(dim=1).values > extent * self.percent_big_ws
-            # prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
-            prune_mask = torch.logical_or(prune_mask, big_points_ws)
+    #     # Prune 
+    #     prune_mask = (self.get_opacity < min_opacity).squeeze()
+    #     if max_screen_size:
+    #         # stree added/changed: differ from 4dgs
+    #         big_points_vs = self.max_radii2D > max_screen_size
+    #         big_points_ws = self.get_scaling.max(dim=1).values > extent * self.percent_big_ws
+    #         # prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
+    #         prune_mask = torch.logical_or(prune_mask, big_points_ws)
 
-        self.prune_points(prune_mask)
-        # stree added
-        self.scalar_dict['points_pruned'] = prune_mask.sum().item()            
-        print(f'Number of pruned gaussians: {prune_mask.sum()}')
-        self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 2), device="cuda")
-        self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+    #     self.prune_points(prune_mask)
+    #     # stree added
+    #     self.scalar_dict['points_pruned'] = prune_mask.sum().item()            
+    #     print(f'Number of pruned gaussians: {prune_mask.sum()}')
+    #     self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 2), device="cuda")
+    #     self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
+    #     self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
-        torch.cuda.empty_cache()
-        return self.scalar_dict, self.tensor_dict
+    #     torch.cuda.empty_cache()
+    #     return self.scalar_dict, self.tensor_dict
 
+    
+    
+    
     def add_densification_stats(self, viewspace_point_tensor, update_filter):
         self.xyz_gradient_accum[update_filter, 0:1] += torch.norm(viewspace_point_tensor.grad[update_filter, :2], dim=-1, keepdim=True)
         self.denom[update_filter] += 1
