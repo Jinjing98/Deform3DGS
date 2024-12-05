@@ -270,6 +270,10 @@ if __name__ == "__main__":
     torch.cuda.empty_cache()
     use_stree_grouping_strategy = True
     # use_stree_grouping_strategy = False
+    if use_stree_grouping_strategy:
+        use_streetgs_render = True #fail
+        use_streetgs_render = False
+
     parser = ArgumentParser(description="Training script parameters")
     setup_seed(6666)
     lp = ModelParams(parser)
@@ -323,6 +327,6 @@ if __name__ == "__main__":
             args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname, args.extra_mark)
     else:
         from train_utils_misgs import training_misgsmodel
-        training_misgsmodel(args)
+        training_misgsmodel(args,use_streetgs_render = use_streetgs_render)
     # All done
     print("\nTraining complete.", args.model_path)
