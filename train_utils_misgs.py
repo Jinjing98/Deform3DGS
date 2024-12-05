@@ -174,33 +174,16 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         if (iteration - 1) == training_args.debug_from:
             cfg.render.debug = True
             
-        if  use_streetgs_render:
-            render_pkg = gaussians_renderer.render(viewpoint_cam, controller)
-            # for key,value in render_pkg.items():
-            #     print(value.shape,key)
-            # assert 0
-            try:
-                image, acc, viewspace_point_tensor, visibility_filter, radii = render_pkg["rgb"], render_pkg['acc'], \
-                    render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-            except:
-                assert 0, render_pkg.keys()
-            depth = render_pkg['depth'] # [1, H, W]
-        else:
-            print('!!!!TODO only support tisseu for now...')
-            bg_color = [1, 1, 1] if cfg.data.white_background else [0, 0, 0]
-            background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+        print('!!!!TODO only support tisseu for now...')
+        bg_color = [1, 1, 1] if cfg.data.white_background else [0, 0, 0]
+        background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
-            render_pkg = render(viewpoint_cam, controller.tissue, cfg.render, background)
-            image, depth, viewspace_point_tensor, visibility_filter, radii = \
-                render_pkg["render"], render_pkg["depth"], render_pkg["viewspace_points"], \
-                    render_pkg["visibility_filter"], render_pkg["radii"]
-            acc = torch.zeros_like(depth)
-            print('todo not sure acc...')
-
-            # for key,value in render_pkg.items():
-            #     print(value.shape,key)
-            # assert 0
-
+        render_pkg = render(viewpoint_cam, controller.tissue, cfg.render, background)
+        image, depth, viewspace_point_tensor, visibility_filter, radii = \
+            render_pkg["render"], render_pkg["depth"], render_pkg["viewspace_points"], \
+                render_pkg["visibility_filter"], render_pkg["radii"]
+        acc = torch.zeros_like(depth)
+        print('todo not sure acc...')
 
         scalar_dict = dict()
 
@@ -348,18 +331,18 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             row0 = torch.cat([gt_image, image, depth_colored], dim=2)
             acc = acc.repeat(3, 1, 1)
             with torch.no_grad():
-                if use_streetgs_render:
-                    # row1 = torch.zeros_like(row0).to(row0.device)
-                    # print('to do  render_dbg disabled')
+                print('!!!!TODO only support tisseu for now...')
+                bg_color = [1, 1, 1] if cfg.data.white_background else [0, 0, 0]
+                background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+                render_pkg = render(viewpoint_cam, controller.tissue, cfg.render, background)
+                image, depth, viewspace_point_tensor, visibility_filter, radii = \
+                    render_pkg["render"], render_pkg["depth"], render_pkg["viewspace_points"], \
+                        render_pkg["visibility_filter"], render_pkg["radii"]
+                depth = depth.repeat(3, 1, 1)
+                depth = depth.to(image.device) 
+                place_holder = torch.zeros_like(depth).to(depth.device)
+                row1 = torch.cat([image, depth, place_holder], dim=2)
 
-                    render_pkg_obj = gaussians_renderer.render_object(viewpoint_cam, controller)
-                    image_obj, acc_obj = render_pkg_obj["rgb"], render_pkg_obj['acc']
-                    acc_obj = acc_obj.repeat(3, 1, 1)
-                    acc = acc.to(image_obj.device) 
-                    row1 = torch.cat([acc, image_obj, acc_obj], dim=2)
-                else:
-                    row1 = torch.zeros_like(row0).to(row0.device)
-                    print('to do   not handle yet....')
             image_to_show = torch.cat([row0, row1], dim=1)
             image_to_show = torch.clamp(image_to_show, 0.0, 1.0)
             os.makedirs(f"{cfg.model_path}/log_images", exist_ok = True)
@@ -447,17 +430,11 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                                                 viewspace_point_tensor_grad = viewspace_point_tensor_grad,
                                                 radii = radii)
                 # #//////////////////////////////////////
-            if use_streetgs_render:
-                print('to do  render_dbg disabled')
 
-                training_report_misgs(tb_writer, iteration, scalar_dict, tensor_dict, 
-                            training_args.test_iterations, scene, gaussians_renderer)
-            else:
-                print('todo  only do for tissue...')
-                if render_stree_param_for_ori_train_report!= None:
-                    print('todo ugly')
-                    training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), 
-                                training_args.test_iterations, scene, render, [render_stree_param_for_ori_train_report, background])
+            if render_stree_param_for_ori_train_report!= None:
+                print('todo ugly')
+                training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), 
+                            training_args.test_iterations, scene, render, [render_stree_param_for_ori_train_report, background])
 
             # Optimizer step
             if iteration < training_args.iterations:
