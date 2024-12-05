@@ -181,13 +181,18 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
                 # densify and prune
                 if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0 :
                     size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                    gaussians.densify_and_prune(densify_threshold, opacity_threshold, 
-                                                scene.cameras_extent, size_threshold,
+                    
+                    gaussians.densify_and_prune(max_grad = densify_threshold, 
+                                                min_opacity = opacity_threshold, 
+                                                extent = scene.cameras_extent, 
+                                                max_screen_size = size_threshold,
                                                 skip_prune = True)
                 if iteration > opt.pruning_from_iter and iteration % opt.pruning_interval == 0:
                     size_threshold = 40 if iteration > opt.opacity_reset_interval else None
-                    gaussians.densify_and_prune(densify_threshold, opacity_threshold, 
-                                                scene.cameras_extent, size_threshold,
+                    gaussians.densify_and_prune(max_grad = densify_threshold, 
+                                                min_opacity = opacity_threshold, 
+                                                extent = scene.cameras_extent, 
+                                                max_screen_size = size_threshold,
                                                 skip_densify = True)
                 # reset opacity
                 if iteration % opt.opacity_reset_interval == 0 or (dataset.white_background and iteration == opt.densify_from_iter):

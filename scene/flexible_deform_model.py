@@ -474,14 +474,15 @@ class TissueGaussianModel:
         self.densify_and_clone(grads, max_grad, extent)
         self.densify_and_split(grads, max_grad, extent)
     
-    def prune(self, max_grad, min_opacity, extent, max_screen_size):
+    def prune(self, min_opacity, extent, max_screen_size,
+              ):
         prune_mask = (self.get_opacity < min_opacity).squeeze()
         if max_screen_size:
             # FDM added/changed: differ from 4dgs
             big_points_vs = self.max_radii2D > max_screen_size
-            # big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
-            prune_mask = torch.logical_or(prune_mask, big_points_vs)
-            # prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
+            big_points_ws = self.get_scaling.max(dim=1).values > 0.1 * extent
+            # prune_mask = torch.logical_or(prune_mask, big_points_vs)
+            prune_mask = torch.logical_or(torch.logical_or(prune_mask, big_points_vs), big_points_ws)
         self.prune_points(prune_mask)
         torch.cuda.empty_cache()
 
@@ -496,55 +497,10 @@ class TissueGaussianModel:
         # Prune 
         # no need to reset: stree is redundant procedure
         if not skip_prune:  
-            self.prune(max_grad, min_opacity, extent, max_screen_size)
+            self.prune( min_opacity, extent, max_screen_size)
         torch.cuda.empty_cache()
         return {},{}
         # return self.scalar_dict, self.tensor_dict
-    
-    #jj: perform the same densify+prune+reset_opa as the training()
-    def densify_and_prune_v0(self,
-                          iteration, 
-                          opt, 
-                          cameras_extent,
-                          white_background,
-                          visibility_filter,
-                          viewspace_point_tensor_grad,
-                          radii,
-                          ):
-        '''
-         perform the same densify+prune+reset_opa as the training() of deform3dgs
-        '''
-        # Densification
-        if iteration < opt.densify_until_iter : 
-            # Keep track of max radii in image-space for pruning
-            self.max_radii2D[visibility_filter] = torch.max(self.max_radii2D[visibility_filter], radii[visibility_filter])
-            self.add_densification_stats(viewspace_point_tensor_grad, visibility_filter)
-
-
-            opacity_threshold = opt.opacity_threshold_fine_init - iteration*(opt.opacity_threshold_fine_init - opt.opacity_threshold_fine_after)/(opt.densify_until_iter)  
-            densify_threshold = opt.densify_grad_threshold_fine_init - iteration*(opt.densify_grad_threshold_fine_init - opt.densify_grad_threshold_after)/(opt.densify_until_iter )  
-
-            if iteration > opt.densify_from_iter and iteration % opt.densification_interval == 0 :
-                size_threshold = 20 if iteration > opt.opacity_reset_interval else None
-                self.densify(densify_threshold, opacity_threshold, cameras_extent, size_threshold)
-                
-            if iteration > opt.pruning_from_iter and iteration % opt.pruning_interval == 0:
-                size_threshold = 40 if iteration > opt.opacity_reset_interval else None
-                self.prune(densify_threshold, opacity_threshold, cameras_extent, size_threshold)
-                
-            # #from deformable 3d gs---surg-gs(0.0003/0.0002)/deformable3dgs(0.0007)
-            # if use deformable3dgs reset opacity scheme
-            # if iteration > self.opt.densify_from_iter and iteration % self.opt.densification_interval == 0:
-            #     size_threshold = 20 if iteration > self.opt.opacity_reset_interval else None
-            #     self.gaussians.densify_and_prune(self.opt.densify_grad_threshold, 0.005, self.scene.cameras_extent, size_threshold)
-
-            if iteration % opt.opacity_reset_interval == 0 or (white_background and iteration == opt.densify_from_iter):
-                print("reset opacity")
-                self.reset_opacity()
-        torch.cuda.empty_cache()
-        scalar_dict = {}
-        tensor_dict = {}
-        return scalar_dict, tensor_dict
     
     def standard_constaint(self):
         

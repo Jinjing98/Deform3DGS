@@ -681,20 +681,15 @@ class MisGaussianModel(nn.Module):
 
     # def densify_and_prune(self, max_grad, min_opacity, prune_big_points, exclude_list=[],extent = None,max_screen_size = None):
     def densify_and_prune(self, 
-                          iteration = None,
-                          opt = None,
-                          cameras_extent = None,
-                          white_background = None,
-                          visibility_filter = None,
-                          viewspace_point_tensor_grad = None,
-                          radii = None,
-
                           max_grad = None, 
                           min_opacity = None,
                           exclude_list=[],
                           extent = None,
                           max_screen_size = None,
-                          percent_big_ws = None):
+                          skip_densify = None,
+                          skip_prune = None,
+                        #   percent_big_ws = None,
+                          ):
         scalars = {}#None
         tensors = {}#None
         for model_name in self.model_name_id.keys():
@@ -702,18 +697,14 @@ class MisGaussianModel(nn.Module):
                 continue
             # if model_name == 'tissue':
             model: Union[TissueGaussianModel,GaussianModelBase] = getattr(self, model_name)
-            if isinstance(model,TissueGaussianModel):
-                # it will does reset op as well in ternnally
-                scalars_, tensors_ = model.densify_and_prune(iteration = iteration, 
-                                            opt = opt, 
-                                            cameras_extent = cameras_extent,
-                                            white_background = white_background,
-                                            visibility_filter = visibility_filter,
-                                            viewspace_point_tensor_grad = viewspace_point_tensor_grad,
-                                            radii = radii)
-            else:
-                assert 0, NotImplementedError
-                scalars_, tensors_ = model.densify_and_prune(max_grad, min_opacity, extent=extent, max_screen_size=max_screen_size,percent_big_ws=percent_big_ws)
+            scalars_, tensors_ = model.densify_and_prune(max_grad = max_grad, 
+                                                         min_opacity = min_opacity, 
+                                                         extent=extent, 
+                                                         max_screen_size=max_screen_size,
+                                                         skip_densify=skip_densify,
+                                                         skip_prune=skip_prune,
+                                                        #  percent_big_ws=percent_big_ws,
+                                                         )
 
             if model_name == 'background':
                 scalars = scalars_
@@ -721,6 +712,7 @@ class MisGaussianModel(nn.Module):
     
         return scalars, tensors
     
+
     def get_box_reg_loss(self):
         box_reg_loss = 0.
         for obj_name in self.obj_list:

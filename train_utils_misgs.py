@@ -316,13 +316,13 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
 
         # follow deform3dgs
-        print('todo Correct? ')
-        viewspace_point_tensor_grad =  viewspace_point_tensor.grad
+        # print('todo Correct? ')
+        # viewspace_point_tensor_grad =  viewspace_point_tensor.grad
 
         iter_end.record()
         is_save_images = True
-        if is_save_images and (iteration % 1000 == 0):
-        # if is_save_images and (iteration % 1 == 0):
+        # if is_save_images and (iteration % 1000 == 0):
+        if is_save_images and (iteration % 10 == 0):
             # row0: gt_image, image, depth
             # row1: acc, image_obj, acc_obj
             depth_colored, _ = visualize_depth_numpy(depth.detach().cpu().numpy().squeeze(0))
@@ -334,14 +334,15 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 print('!!!!TODO only support tisseu for now...')
                 bg_color = [1, 1, 1] if cfg.data.white_background else [0, 0, 0]
                 background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
-                render_pkg = render(viewpoint_cam, controller.tissue, cfg.render, background)
-                image, depth, viewspace_point_tensor, visibility_filter, radii = \
-                    render_pkg["render"], render_pkg["depth"], render_pkg["viewspace_points"], \
-                        render_pkg["visibility_filter"], render_pkg["radii"]
-                depth = depth.repeat(3, 1, 1)
-                depth = depth.to(image.device) 
-                place_holder = torch.zeros_like(depth).to(depth.device)
-                row1 = torch.cat([image, depth, place_holder], dim=2)
+
+                render_pkg_obj = render(viewpoint_cam, controller.tissue, cfg.render, background)
+                image_obj, depth_obj = render_pkg_obj["render"], render_pkg_obj['depth']
+                # render_pkg_obj = gaussians_renderer.render_object(viewpoint_cam, gaussians)
+                # image_obj, acc_obj = render_pkg_obj["rgb"], render_pkg_obj['acc']
+
+                depth_obj = depth_obj.repeat(3, 1, 1).to(image_obj.device) 
+                place_holder = torch.zeros_like(depth_obj).to(depth_obj.device)
+                row1 = torch.cat([image_obj, depth_obj, place_holder], dim=2)
 
             image_to_show = torch.cat([row0, row1], dim=1)
             image_to_show = torch.clamp(image_to_show, 0.0, 1.0)
@@ -370,66 +371,57 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration,stage  ='')
 
-            use_v2 = True
-            use_v2 = False
-            if use_v2:
-                # #//////////////////////////////////////
 
-                # Densification
-                if iteration < optim_args.densify_until_iter:
-                    controller.set_visibility(include_list=list(set(controller.model_name_id.keys()) - set(['sky'])))
-                    controller.parse_camera(viewpoint_cam)   
-                    # does not to do this if it is tissue model...?
-                    # controller.set_max_radii2D(radii, visibility_filter)
-                    # controller.add_densification_stats(viewspace_point_tensor, visibility_filter)
+            # Densification
+            if iteration < optim_args.densify_until_iter :
+                # Keep track of max radii in image-space for pruning
+                controller.set_visibility(include_list=list(set(controller.model_name_id.keys()) - set(['sky'])))
+                controller.parse_camera(viewpoint_cam)  #update self.frame and other input for the rendering; cal the current #gs 
+                controller.set_max_radii2D(radii, visibility_filter)
+                controller.add_densification_stats(viewspace_point_tensor, visibility_filter)
+
+                opacity_threshold = optim_args.opacity_threshold_fine_init - iteration*(optim_args.opacity_threshold_fine_init - optim_args.opacity_threshold_fine_after)/(optim_args.densify_until_iter)  
+                densify_threshold = optim_args.densify_grad_threshold_fine_init - iteration*(optim_args.densify_grad_threshold_fine_init - optim_args.densify_grad_threshold_after)/(optim_args.densify_until_iter )  
+
+                # densify and prune
+                if iteration > optim_args.densify_from_iter and iteration % optim_args.densification_interval == 0 :
+                    size_threshold = 20 if iteration > optim_args.opacity_reset_interval else None
+                    controller.densify_and_prune(max_grad = densify_threshold, 
+                                                    min_opacity = opacity_threshold, 
+                                                exclude_list = [],
+                                                extent = scene.cameras_extent, 
+                                                max_screen_size = size_threshold,
+                                                skip_prune = True)
                     
-                    prune_big_points = iteration > optim_args.opacity_reset_interval
+                if iteration > optim_args.pruning_from_iter and iteration % optim_args.pruning_interval == 0:
+                    size_threshold = 40 if iteration > optim_args.opacity_reset_interval else None
+                    controller.densify_and_prune(max_grad = densify_threshold, 
+                                                    min_opacity = opacity_threshold, 
+                                                exclude_list = [],
+                                                extent = scene.cameras_extent, 
+                                                max_screen_size = size_threshold,
+                                                skip_densify = True)
+                # reset opacity
+                if iteration % optim_args.opacity_reset_interval == 0 or (data_args.white_background and iteration == optim_args.densify_from_iter):
+                    print("reset opacity")
+                    controller.reset_opacity()
+            #training report happen here?
+            
+            
+            # Optimizer step
+            # if iteration < optim_args.iterations:
+            if iteration < training_args.iterations:
+                controller.update_optimizer()
 
-                    if iteration > optim_args.densify_from_iter:
-                        if iteration % optim_args.densification_interval == 0:
-                            # scalars, tensors = controller.densify_and_prune(
-                            #     max_grad=optim_args.densify_grad_threshold,
-                            #     min_opacity=optim_args.min_opacity,
-                            #     prune_big_points=prune_big_points,
-                            # )
-                            scalars, tensors = controller.densify_and_prune(iteration = iteration, 
-                                                        opt = optim_args, 
-                                                        cameras_extent = scene.cameras_extent,
-                                                        white_background = data_args.white_background,
-                                                        visibility_filter = visibility_filter,
-                                                        viewspace_point_tensor_grad = viewspace_point_tensor_grad,
-                                                        radii = radii)
+                # controller.optimizer.step()
+                # controller.optimizer.zero_grad(set_to_none = True)
 
 
-                            # scalar_dict is used to log and resume? what about tensor_dict
-                            # hard set to 0 should be fine?
-                            # scalar_dict.update(scalars)
-                            # tensor_dict.update(tensors)
-                            
-                # # Reset opacity
-                # if iteration < optim_args.densify_until_iter:
-                    # if iteration % optim_args.opacity_reset_interval == 0:
-                    #     controller.reset_opacity()
-                    # if data_args.white_background and iteration == optim_args.densify_from_iter:
-                    #     controller.reset_opacity()
-                # #//////////////////////////////////////
-            else:
-                # #//////////////////////////////////////
-                # Densification-prune-reset
-                if iteration < optim_args.densify_until_iter :
-                    print('*******************************')
-                    print(f'******************{controller}*************')
-                    # notice this "gaussians" is  misgs model! it is not spercific component
-                    print('notice this "gaussians" is  misgs model! it is not spercific component')
-                    print('already contain reset opocity if needed')
-                    controller.densify_and_prune(iteration = iteration, 
-                                                opt = optim_args, 
-                                                cameras_extent = scene.cameras_extent,
-                                                white_background = data_args.white_background,
-                                                visibility_filter = visibility_filter,
-                                                viewspace_point_tensor_grad = viewspace_point_tensor_grad,
-                                                radii = radii)
-                # #//////////////////////////////////////
+
+
+
+            # ////////////////////////////////////////////
+
 
             if render_stree_param_for_ori_train_report!= None:
                 print('todo ugly')
