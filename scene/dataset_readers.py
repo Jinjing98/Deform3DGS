@@ -24,7 +24,24 @@ from scene.flexible_deform_model import BasicPointCloud
 from utils.general_utils import PILtoTorch
 from tqdm import tqdm
 
+#only used for misgs
 class CameraInfo(NamedTuple):
+    uid: int
+    R: np.array
+    T: np.array
+    FovY: np.array
+    FovX: np.array
+    K: np.array
+    image: np.array
+    image_path: str
+    image_name: str
+    # width: int
+    # height: int
+    # metadata: dict = dict()
+    # mask: np.array = None
+    # acc_mask: np.array = None
+
+
     uid: int
     R: np.array
     T: np.array
@@ -33,9 +50,50 @@ class CameraInfo(NamedTuple):
     image: np.array
     image_path: str
     image_name: str
-    width: int
-    height: int
+    # width: int
+    # height: int
     time : float
+
+    h: int
+    w: int
+    id: int
+    depth: np.array
+    gt_alpha_mask: np.array
+    data_device : str
+    Znear : np.array
+    Zfar: np.array
+
+
+    #stree gs
+    metadata: dict = dict()
+    masks: dict = dict()
+    # metadata: dict = dict()
+    mask: np.array = None
+    acc_mask: np.array = None
+
+                    # R=R, 
+                    # T=T, 
+                    # FoVx=FovX, 
+                    # FoVy=FovY, 
+                    # K=self.K,
+                    # image=image, 
+                    # image_name=f"{idx}", 
+                    # metadata=cam_metadata,
+                    # #exclusive to misgs
+                    # id=idx, 
+                    # # acc_mask
+                    # #exclusive to deform3dgs
+                    # uid=idx,
+                    # time=time,
+                    # mask=mask, 
+                    # depth=depth, 
+                    # gt_alpha_mask=None,
+                    # data_device=torch.device("cuda"), 
+                    # Znear=None, Zfar=None, 
+                    # h=self.img_wh[1], w=self.img_wh[0],
+    
+
+ 
    
 class SceneInfo(NamedTuple):
     point_cloud: BasicPointCloud
@@ -45,6 +103,10 @@ class SceneInfo(NamedTuple):
     nerf_normalization: dict
     ply_path: str
     maxtime: int
+    
+    #stree gs
+    scene_metadata: dict = dict()
+    cam_metadata: dict = dict()
 
 def getNerfppNorm(cam_info):
     def get_center_and_diag(cam_centers):
@@ -155,54 +217,84 @@ def generateCamerasFromTransforms(path, template_transformsfile, extension, maxt
                             time = time))
     return cam_infos
 
-def readEndoNeRFInfo(datadir,tool_mask = 'use',init_mode = None):
+def readEndoNeRFInfo(datadir,tool_mask = 'use',init_mode = None,
+                     load_other_obj_meta = False,
+                     cfg = None,
+                     ):
     assert init_mode in ['MAPF','skipMAPF','rand']
-    # load camera infos
     from scene.endo_loader import EndoNeRF_Dataset
+
+    # Load the cam_meta + scene_meta + poses_extrinsics
+    # have the paths related .self ready by internally calls 
+    # load_meta() with the __init__ 
     endo_dataset = EndoNeRF_Dataset(
         datadir=datadir,
         downsample=1.0,
         tool_mask=tool_mask,
     )
+
+    # Load_cameras(with imgs)_with_meta: 
+    # with properly meta documented
+    print('Loading camera....(surg-gs have seperate cam and scene)')
     train_cam_infos = endo_dataset.format_infos(split="train")
     test_cam_infos = endo_dataset.format_infos(split="test")
     video_cam_infos = endo_dataset.format_infos(split="video")
-    
-    # get normalizations
+    # get cam normalizations
     nerf_normalization = getNerfppNorm(train_cam_infos)
 
-    # initialize sparse point clouds
+    # Load other_obj_meta + 6Dof BB
+    scene_metadata = {}
+    cam_metadata = {}
+    if load_other_obj_meta:
+        assert cfg != None
+        scene_metadata = endo_dataset.load_other_obj_meta(cameras=[0])
+        #udpate
+        scene_metadata['scene_center'] = nerf_normalization['translate']
+        scene_metadata['scene_radius'] = nerf_normalization['radius']
+        sphere_normalization = nerf_normalization
+        print('todo probably have issue')
+        scene_metadata['sphere_center'] = sphere_normalization['translate']
+        scene_metadata['sphere_radius'] = sphere_normalization['radius']
+
+
+
+    # Initialize pcd computation:
+    # sparse point clouds
+    # the pcd is used for gaussians init
     print('The init points for training did not consider mask?...')
     print('take care! it keeps changing for each runs!...')
     ply_path = os.path.join(datadir, "points3d.ply")
-
     # points init
     xyz, rgb, normals = endo_dataset.get_sparse_pts(init_mode=init_mode)
     print('do we need to perform tool_mask here as well?')
-    
     normals = np.random.random((xyz.shape[0], 3))
     pcd = BasicPointCloud(points=xyz, colors=rgb, normals=normals)
     # storePly(ply_path, xyz,rgb*255)  # the points3d.ply is not used at all, try not touch the src dataset
     plydata = storePly(ply_path, xyz,rgb*255, wo_write=True)  # the points3d.ply is not used at all, try not touch the src dataset
     print('the points3d.ply is not used at all, try not touch the src dataset')
-
     try:
         # pcd = fetchPly(ply_path)
         pcd = fetchPly(path = None, plydata = plydata)
     except:
         pcd = None
-    
+
+
+
+
     # get the maximum time
+    # Load_sceneInfo with init_pcd/cam/scene/everthing
     maxtime = endo_dataset.get_maxtime()
-    
-    # the pcd use for gaussians init
     scene_info = SceneInfo(point_cloud=pcd,
                            train_cameras=train_cam_infos,
                            test_cameras=test_cam_infos,
                            video_cameras=video_cam_infos,
                            nerf_normalization=nerf_normalization,
                            ply_path=ply_path,
-                           maxtime=maxtime)
+                           maxtime=maxtime,
+                           #jj
+                           scene_metadata=scene_metadata,
+                           cam_metadata=cam_metadata,
+                           )
 
     return scene_info
     
