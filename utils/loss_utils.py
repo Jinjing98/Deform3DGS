@@ -27,14 +27,32 @@ def lpips_loss(img1, img2, lpips_model):
     return loss.mean()
 
 def l1_loss(network_output, gt, mask=None):
-    loss = torch.abs((network_output - gt))
+    assert network_output.ndim in [3,4]
+    assert gt.ndim in [3,4]
+    if network_output.ndim==3:
+        network_output = network_output.unsqueeze(0)
+    if gt.ndim==3:
+        gt = gt.unsqueeze(0)
+    assert network_output.ndim==gt.ndim,f"{network_output.shape} {gt.shape}"
+
+    if mask!= None:
+        assert mask.ndim in [2,3,4]
+        if mask.ndim==2:
+            mask = mask.unsqueeze(0).unsqueeze(0)
+        elif mask.ndim==3:
+            mask = mask.unsqueeze(0)
+        assert network_output.ndim==mask.ndim
+
+    # ///////////////////////////
+    loss = torch.abs(network_output - gt)
     if mask is not None:
         if mask.ndim == 4:
+            assert network_output.ndim == 4
             mask = mask.repeat(1, network_output.shape[1], 1, 1)
-        elif mask.ndim == 3:
-            mask = mask.repeat(network_output.shape[1], 1, 1)
         else:
-            raise ValueError('the dimension of mask should be either 3 or 4')
+            # raise ValueError('the dimension of mask should be either 3 or 4')
+            raise ValueError(f'the dimension of mask should be either 3 or 4 \
+                             {mask.shape} {gt.shape} {network_output.shape} {loss.shape}')
     
         try:
             loss = loss[mask!=0]
@@ -43,6 +61,7 @@ def l1_loss(network_output, gt, mask=None):
             print(mask.shape)
             print(loss.dtype)
             print(mask.dtype)
+            assert 0,loss.mean()
     return loss.mean()
 
 def l2_loss(network_output, gt):
@@ -58,16 +77,18 @@ def create_window(window_size, channel):
     window = Variable(_2D_window.expand(channel, 1, window_size, window_size).contiguous())
     return window
 
-def ssim(img1, img2, window_size=11, size_average=True):
+# streegs added
+def ssim(img1, img2, window_size=11, size_average=True, mask=None):
     channel = img1.size(-3)
     window = create_window(window_size, channel)
-
+    if mask is not None:
+        img1 = torch.where(mask, img1, torch.zeros_like(img1))
+        img2 = torch.where(mask, img2, torch.zeros_like(img2))
     if img1.is_cuda:
         window = window.cuda(img1.get_device())
     window = window.type_as(img1)
 
     return _ssim(img1, img2, window, window_size, channel, size_average)
-
 def _ssim(img1, img2, window, window_size, channel, size_average=True):
     mu1 = F.conv2d(img1, window, padding=window_size // 2, groups=channel)
     mu2 = F.conv2d(img2, window, padding=window_size // 2, groups=channel)
