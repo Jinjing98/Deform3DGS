@@ -269,7 +269,7 @@ if __name__ == "__main__":
     # torch.set_default_tensor_type('torch.FloatTensor')
     torch.cuda.empty_cache()
     use_stree_grouping_strategy = True
-    # use_stree_grouping_strategy = False
+    use_stree_grouping_strategy = False
     if use_stree_grouping_strategy:
         use_streetgs_render = True #fail
         use_streetgs_render = False

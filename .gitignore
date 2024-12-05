@@ -8,9 +8,20 @@ tensorboard_3d
 screenshots
 data/
 data
-submodules/
+# submodules/
+submodules/RAFT
+submodules/simple-knn
+
+submodules/depth-diff-gaussian-rasterization/*.txt
+*.h
+*.cu
+*.md
+*.cpp
+# submodules/
 assets/
 *.TTF
+
+reconstruct/
 
 *.ipynb
 # diff_rasterization/dist
