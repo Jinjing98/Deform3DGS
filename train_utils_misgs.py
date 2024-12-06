@@ -161,6 +161,11 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         else:
             mask = torch.ones_like(gt_image[0:1]).bool()
 
+        if hasattr(viewpoint_cam, 'tool_mask'):# tissue mask
+            tool_mask = viewpoint_cam.tool_mask.cuda().bool()
+        else:
+            tool_mask = torch.ones_like(gt_image[0:1]).bool()
+
         if hasattr(viewpoint_cam, 'original_sky_mask'):
             sky_mask = viewpoint_cam.original_sky_mask.cuda()
         else:
@@ -189,11 +194,26 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
         from utils.loss_utils import l1_loss
 
+        # tissue loss
         Ll1 = l1_loss(image, gt_image, mask)
         scalar_dict['l1_loss'] = Ll1.item()
         loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + optim_args.lambda_dssim * (1.0 - ssim(image.to(torch.double), gt_image.to(torch.double), mask=mask))
-
         print('Missing Depth loss...')
+
+        # hard code tool_loss 
+        hard_code_tool_loss = True
+        hard_code_tool_loss = False
+        if hard_code_tool_loss:
+            Ll1_tool = l1_loss(image, gt_image, tool_mask)
+            scalar_dict['l1_tool_loss'] = Ll1_tool.item()
+            tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
+                + optim_args.lambda_dssim * (1.0 - ssim(image.to(torch.double), gt_image.to(torch.double), \
+                                                        mask=tool_mask))
+            loss += tool_loss
+
+
+
+
         # sky loss
         if optim_args.lambda_sky > 0 and controller.include_sky and sky_mask is not None:
             assert 0, 'temp disabled '
@@ -226,7 +246,6 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             render_pkg_obj = gaussians_renderer.render_object(viewpoint_cam, controller)
             image_obj, acc_obj = render_pkg_obj["rgb"], render_pkg_obj['acc']
             acc_obj = torch.clamp(acc_obj, min=1e-6, max=1.-1e-6)
-
             # box_reg_loss = controller.get_box_reg_loss()
             # scalar_dict['box_reg_loss'] = box_reg_loss.item()
             # loss += optim_args.lambda_reg * box_reg_loss

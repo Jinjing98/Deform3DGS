@@ -258,7 +258,7 @@ class EndoNeRF_Dataset(object):
             masks = {
                 "original_mask":mask,
                 # "tissue":mask,
-                # "tool":~mask,
+                "tool_mask":~mask,
             }
 
             cam_info = CameraInfo(
