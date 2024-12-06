@@ -42,9 +42,30 @@ class MisGaussianModel(nn.Module):
         self.flip_matrix = torch.eye(3).float().cuda() * -1
         self.flip_matrix[self.flip_axis, self.flip_axis] = 1
         self.flip_matrix = matrix_to_quaternion(self.flip_matrix.unsqueeze(0))
+        
+        #//////////jj///////////////////
+        # model names: manual add here!
+        # save the same keys as self.model_name_id
+        self.candidate_model_names = {}
+        if self.include_background:
+            self.candidate_model_names['bg_model'] = ['background']
+            assert torch.Tensor([ name.startswith('background') for name in self.candidate_model_names['bg_model']]).all(),\
+                f"not all names start_with background {self.candidate_model_names['bg_model']}"
+            # assert len(self.candidate_model_names['bg_model'])==1,'later will use index[0]'
+        if self.include_tissue:
+            self.candidate_model_names['tissue_model'] = ['tissue',
+                                                        # 'tissue_2nd',
+                                                        ]
+            
+            assert torch.Tensor([ name.startswith('tissue') for name in self.candidate_model_names['tissue_model']]).all(),\
+                f"not all names start_with tissue {self.candidate_model_names['tissue_model']}"
+        if self.include_obj:
+            model_names_obj = []
+            for track_id, _ in self.metadata['obj_meta'].items():
+                model_names_obj.extend( f'obj_{track_id:03d}')
+            self.candidate_model_names['obj_model_cand']= model_names_obj
+        #/////////////////////////////
         self.setup_functions() 
-    
-    
     
     def setup_functions(self):
         obj_tracklets = self.metadata['obj_tracklets']
@@ -58,33 +79,40 @@ class MisGaussianModel(nn.Module):
         self.obj_info = obj_info
         # Build background model
         if self.include_background:
-            self.background = GaussianModelBkgd(
-                model_name='background', 
-                scene_center=self.metadata['scene_center'],
-                scene_radius=self.metadata['scene_radius'],
-                sphere_center=self.metadata['sphere_center'],
-                sphere_radius=self.metadata['sphere_radius'],
-            )
-                                    
-            self.model_name_id['background'] = self.models_num
-            self.models_num += 1
-        else:
-            pass
+            model_names = self.candidate_model_names['bg_model']
+            for model_name in model_names:
+                model = GaussianModelBkgd(
+                    model_name=model_name, 
+                    scene_center=self.metadata['scene_center'],
+                    scene_radius=self.metadata['scene_radius'],
+                    sphere_center=self.metadata['sphere_center'],
+                    sphere_radius=self.metadata['sphere_radius'],
+                )
+                setattr(self, model_name, model)
+                self.model_name_id[model_name] = self.models_num
+                self.models_num += 1
+
         # Build tissue model
         if self.include_tissue:
-            self.tissue = TissueGaussianModel(self.cfg.model.gaussian.sh_degree, \
-                                              self.cfg.model.fdm)                     
-            self.model_name_id['tissue'] = self.models_num
-            self.models_num += 1
+            model_names = self.candidate_model_names['tissue_model']
+            for model_name in model_names:
+                model = TissueGaussianModel(self.cfg.model.gaussian.sh_degree, \
+                                                self.cfg.model.fdm)
+                setattr(self, model_name, model )
+                self.model_name_id[model_name] = self.models_num
+                self.models_num += 1
         
         # Build object model
         if self.include_obj:
-            for track_id, obj_meta in self.obj_info.items():
-                model_name = f'obj_{track_id:03d}'
-                setattr(self, model_name, GaussianModelActor(model_name=model_name, obj_meta=obj_meta))
+            model_names = self.candidate_model_names['obj_model_cand']
+            for model_name in model_names:
+                model = GaussianModelActor(model_name=model_name, 
+                                           obj_meta=self.obj_info[model_name],
+                                           )
+                setattr(self, model_name, model)
                 self.model_name_id[model_name] = self.models_num
-                self.obj_list.append(model_name)
                 self.models_num += 1
+                self.obj_list.append(model_name)
                 
         # Build sky model
         if self.include_sky:
@@ -109,13 +137,14 @@ class MisGaussianModel(nn.Module):
             self.pose_correction = PoseCorrection(self.metadata)
         else:
             self.pose_correction = None
-
+        
     
     def set_visibility(self, include_list):
         self.include_list = include_list # prefix
 
     def get_visibility(self, model_name):
-        if model_name == 'background':
+        if model_name.startswith('background'):
+        # if model_name == 'background':
             if model_name in self.include_list and self.include_background:
                 return True
             else:
@@ -130,7 +159,8 @@ class MisGaussianModel(nn.Module):
                 return True
             else:
                 return False
-        elif model_name == 'tissue':
+        elif model_name.startswith('tissue'):
+        # elif model_name == 'tissue':
             if model_name in self.include_list and self.include_tissue:
                 return True
             else:
@@ -140,24 +170,20 @@ class MisGaussianModel(nn.Module):
     def create_from_pcd(self, pcd: BasicPointCloud, spatial_lr_scale: float,\
                         time_line: int):# FDM need
         for model_name in self.model_name_id.keys():
-            if model_name in ['tissue']:
+            if model_name.startswith('tissue'):
                 model: TissueGaussianModel = getattr(self, model_name)
                 print('Try to be the same at first')
                 model.create_from_pcd(pcd = pcd, spatial_lr_scale = spatial_lr_scale, 
                                       time_line = time_line)
             else:
                 model: GaussianModelBase = getattr(self, model_name)
-                if model_name in ['background', 'sky']:
+                if model_name.startswith('background') or model_name in ['sky']:
                     model.create_from_pcd(pcd = pcd, spatial_lr_scale = spatial_lr_scale)
-                elif model_name in ['tool']:
-                    model.create_from_pcd(spatial_lr_scale = spatial_lr_scale)
                 else:
                     assert 0, model_name
     def save_ply(self, path, 
-                #  iteration = None,
                  ):
         mkdir_p(os.path.dirname(path))
-        
         plydata_list = []
         for i in range(self.models_num):
             model_name = self.model_name_id.inverse[i]
@@ -172,8 +198,8 @@ class MisGaussianModel(nn.Module):
                 print('tisseu model save and makr together?')
                 plydata = model.save_ply(path = path,
                                          only_make = True)
+                plydata = PlyElement.describe(plydata, f'vertex_{model_name}')
             plydata_list.append(plydata)
-
         PlyData(plydata_list).write(path)
         
     def load_ply(self, path):
@@ -182,11 +208,9 @@ class MisGaussianModel(nn.Module):
             model_name = plydata.name[7:] # vertex_.....
             if model_name in self.model_name_id.keys():
                 print('Loading model', model_name)
-                # model: GaussianModelBase = getattr(self, model_name)
                 model: Union[GaussianModelBase,TissueGaussianModel] = getattr(self, model_name)
                 model.load_ply(path=None, input_ply=plydata)
                 plydata_list = PlyData.read(path).elements
-                
         self.active_sh_degree = self.max_sh_degree
   
     def load_state_dict(self, state_dict, exclude_list=[]):
@@ -199,13 +223,10 @@ class MisGaussianModel(nn.Module):
         
         if self.actor_pose is not None:
             self.actor_pose.load_state_dict(state_dict['actor_pose'])
-            
         if self.sky_cubemap is not None:
             self.sky_cubemap.load_state_dict(state_dict['sky_cubemap'])
-            
         if self.color_correction is not None:
             self.color_correction.load_state_dict(state_dict['color_correction'])
-            
         if self.pose_correction is not None:
             self.pose_correction.load_state_dict(state_dict['pose_correction'])
                             
@@ -219,13 +240,10 @@ class MisGaussianModel(nn.Module):
         
         if self.actor_pose is not None:
             state_dict['actor_pose'] = self.actor_pose.save_state_dict(is_final)
-      
         if self.sky_cubemap is not None:
             state_dict['sky_cubemap'] = self.sky_cubemap.save_state_dict(is_final)
-      
         if self.color_correction is not None:
             state_dict['color_correction'] = self.color_correction.save_state_dict(is_final)
-      
         if self.pose_correction is not None:
             state_dict['pose_correction'] = self.pose_correction.save_state_dict(is_final)
       
@@ -239,7 +257,6 @@ class MisGaussianModel(nn.Module):
         self.graph_obj_list
         more ?
         '''
-        
         # set camera
         self.viewpoint_camera = camera
         self.frame = camera.meta['frame']
@@ -247,51 +264,33 @@ class MisGaussianModel(nn.Module):
         self.frame_is_val = camera.meta['is_val']
         self.num_gaussians = 0
 
-        # background               
-        if self.get_visibility('background'):
-            assert 0
-            num_gaussians_bkgd = self.background.get_xyz.shape[0]
-            self.num_gaussians += num_gaussians_bkgd
-
-        # jj tissue 
-        if self.get_visibility('tissue'):
-            num_gaussians_tissue = self.tissue.get_xyz.shape[0]
-            self.num_gaussians += num_gaussians_tissue
-
+        #///////////////////////jj
         # object (build scene graph)
-        self.graph_obj_list = []
-
-        if self.include_obj:
-            timestamp = camera.meta['timestamp']
-            for i, obj_name in enumerate(self.obj_list):
-                obj_model: GaussianModelActor = getattr(self, obj_name)
-                start_timestamp, end_timestamp = obj_model.start_timestamp, obj_model.end_timestamp
-                if timestamp >= start_timestamp and timestamp <= end_timestamp and self.get_visibility(obj_name):
-                    self.graph_obj_list.append(obj_name)
-                    num_gaussians_obj = getattr(self, obj_name).get_xyz.shape[0]
-                    self.num_gaussians += num_gaussians_obj
-
+        # an obj model can have general True visinility but due to timestamp issue not included in graph_obj_list
+        self.graph_obj_list = [] 
+        for model_name in self.model_name_id.keys():
+            if self.get_visibility(model_name=model_name):
+                model = getattr(self, model_name)
+                if model_name.startswith('obj_'):
+                    assert self.include_obj
+                    timestamp = camera.meta['timestamp']
+                    start_timestamp, end_timestamp = model.start_timestamp, model.end_timestamp
+                    if timestamp >= start_timestamp and timestamp <= end_timestamp and self.get_visibility(obj_name):
+                        self.num_gaussians += model.get_xyz.shape[0]
+                        self.graph_obj_list.append(model_name)
+                else:
+                    self.num_gaussians += model.get_xyz.shape[0]
         # set index range
         self.graph_gaussian_range = dict()
         idx = 0
-        if self.get_visibility('background'):
-            assert 0
-            num_gaussians_bkgd = self.background.get_xyz.shape[0]
-            self.graph_gaussian_range['background'] = [idx, idx+num_gaussians_bkgd-1]
-            idx += num_gaussians_bkgd
-        
-        # jj
-        if self.get_visibility('tissue'):
-            num_gaussians_tissue = self.tissue.get_xyz.shape[0]
-            self.graph_gaussian_range['tissue'] = [idx, idx+num_gaussians_tissue-1]
-            idx += num_gaussians_tissue
-        
-        for obj_name in self.graph_obj_list:
-            assert 0
-            num_gaussians_obj = getattr(self, obj_name).get_xyz.shape[0]
-            self.graph_gaussian_range[obj_name] = [idx, idx+num_gaussians_obj-1]
-            idx += num_gaussians_obj
-
+        #/////////////////////
+        for model_name in self.model_name_id.keys():
+            if self.get_visibility(model_name=model_name):
+                if model_name.startswith('obj_') and model_name not in self.graph_obj_list:
+                    continue
+                num_gaussians = getattr(self, model_name).get_xyz.shape[0]
+                self.num_gaussians += num_gaussians
+        #////////////////////////
         if len(self.graph_obj_list) > 0:
             assert 0
             self.obj_rots = []
@@ -331,150 +330,103 @@ class MisGaussianModel(nn.Module):
     @property
     def get_scaling(self):
         scalings = []
-        
-        if self.get_visibility('background'):
-            scaling_bkgd = self.background.get_scaling
-            scalings.append(scaling_bkgd)
-
-        #jj
-        if self.get_visibility('tissue'):
-            scaling_tissue = self.tissue.get_scaling
-            scalings.append(scaling_tissue)
-        
-        for obj_name in self.graph_obj_list:
-            obj_model: GaussianModelActor = getattr(self, obj_name)
-
-            scaling = obj_model.get_scaling
-            
-            scalings.append(scaling)
-        
+        for model_name in self.model_name_id.keys():
+            if self.get_visibility(model_name=model_name):
+                if model_name.startswith('obj_') and model_name not in self.graph_obj_list:
+                    continue
+                scaling = getattr(self, model_name).get_scaling
+                scalings.append(scaling)
         scalings = torch.cat(scalings, dim=0)
         return scalings
             
     @property
     def get_rotation(self):
         rotations = []
-
-        if self.get_visibility('background'):            
-            rotations_bkgd = self.background.get_rotation
-            if self.use_pose_correction:
-                rotations_bkgd = self.pose_correction.correct_gaussian_rotation(self.viewpoint_camera, rotations_bkgd)            
-            rotations.append(rotations_bkgd)
-
-        if self.get_visibility('tissue'):            
-            rotations_tissue = self.tissue.get_rotation
-            if self.use_pose_correction:
-                rotations_tissue = self.pose_correction.correct_gaussian_rotation(self.viewpoint_camera, rotations_tissue)            
-            rotations.append(rotations_tissue)
-
+        for model_name in self.model_name_id.keys():
+            # process obj pose seperately
+            if self.get_visibility(model_name=model_name):
+                if model_name.startswith('obj_'):
+                    continue
+                rotation = getattr(self, model_name).get_rotation
+                if self.use_pose_correction:
+                    rotation = self.pose_correction.correct_gaussian_rotation(self.viewpoint_camera, rotation)
+                rotations.append(rotation)
+        # process obj pose
+        rotations_local = []
+        for i, obj_name in enumerate(self.graph_obj_list):
+            assert self.get_visibility(model_name=obj_name)
+            rotations_local.append(getattr(self, obj_name).get_rotation)
         if len(self.graph_obj_list) > 0:
-            rotations_local = []
-            for i, obj_name in enumerate(self.graph_obj_list):
-                obj_model: GaussianModelActor = getattr(self, obj_name)
-                rotation_local = obj_model.get_rotation
-                rotations_local.append(rotation_local)
-
             rotations_local = torch.cat(rotations_local, dim=0)
             rotations_local = rotations_local.clone()
             rotations_local[self.flip_mask] = quaternion_raw_multiply(self.flip_matrix, rotations_local[self.flip_mask])
             rotations_obj = quaternion_raw_multiply(self.obj_rots, rotations_local)
             rotations_obj = torch.nn.functional.normalize(rotations_obj)
             rotations.append(rotations_obj)
-
         rotations = torch.cat(rotations, dim=0)
         return rotations
     
     @property
     def get_xyz(self):
         xyzs = []
-        if self.get_visibility('background'):
-            xyz_bkgd = self.background.get_xyz
-            if self.use_pose_correction:
-                xyz_bkgd = self.pose_correction.correct_gaussian_xyz(self.viewpoint_camera, xyz_bkgd)
-            
-            xyzs.append(xyz_bkgd)
-
-        if self.get_visibility('tissue'):
-            xyz_tissue = self.tissue.get_xyz
-            if self.use_pose_correction:
-                xyz_tissue = self.pose_correction.correct_gaussian_xyz(self.viewpoint_camera, xyz_tissue)
-            
-            xyzs.append(xyz_tissue)
-        
+        for model_name in self.model_name_id.keys():
+            # process obj pose seperately
+            if self.get_visibility(model_name=model_name):
+                if model_name.startswith('obj_'):
+                    continue
+                xyz = getattr(self, model_name).get_xyz
+                if self.use_pose_correction:
+                    xyz = self.pose_correction.correct_gaussian_xyz(self.viewpoint_camera, xyz)
+                xyzs.append(xyz)
+        # process obj pose
+        xyzs_local = []
+        for i, obj_name in enumerate(self.graph_obj_list):
+            assert self.get_visibility(model_name=obj_name)
+            xyzs_local.append(getattr(self, obj_name).get_xyz)
         if len(self.graph_obj_list) > 0:
-            xyzs_local = []
-
-            for i, obj_name in enumerate(self.graph_obj_list):
-                obj_model: GaussianModelActor = getattr(self, obj_name)
-                xyz_local = obj_model.get_xyz
-                xyzs_local.append(xyz_local)
-                
             xyzs_local = torch.cat(xyzs_local, dim=0)
             xyzs_local = xyzs_local.clone()
             xyzs_local[self.flip_mask, self.flip_axis] *= -1
             obj_rots = quaternion_to_matrix(self.obj_rots)
             xyzs_obj = torch.einsum('bij, bj -> bi', obj_rots, xyzs_local) + self.obj_trans
             xyzs.append(xyzs_obj)
-
         xyzs = torch.cat(xyzs, dim=0)
-
         return xyzs            
 
     @property
     def get_features(self):                
         features = []
-
-        if self.get_visibility('background'):
-            features_bkgd = self.background.get_features
-            features.append(features_bkgd)  
-
-        if self.get_visibility('tissue'):
-            features_tissue = self.tissue.get_features
-            features.append(features_tissue)   
-
-        for i, obj_name in enumerate(self.graph_obj_list):
-            obj_model: GaussianModelActor = getattr(self, obj_name)
-            feature_obj = obj_model.get_features_fourier(self.frame)
-            features.append(feature_obj)
-            
+        for model_name in self.model_name_id.keys():
+            if self.get_visibility(model_name=model_name):
+                if model_name.startswith('obj_') and model_name not in self.graph_obj_list:
+                    continue
+                feature = getattr(self, model_name).get_features
+                features.append(feature)
         features = torch.cat(features, dim=0)
-       
         return features
     
     def get_colors(self, camera_center):
         colors = []
+        for model_name in self.model_name_id.keys():
+            if self.get_visibility(model_name=model_name):
+                if model_name.startswith('obj_') and model_name not in self.graph_obj_list:
+                    continue
+                model= getattr(self, model_name)
+                max_sh_degree = model.max_sh_degree
+                sh_dim = (max_sh_degree + 1) ** 2
 
-        model_names = []
-        if self.get_visibility('background'):
-            model_names.append('background')
-        if self.get_visibility('tissue'):
-            model_names.append('tissue')
+                if model_name.startswith('background') or model_name.startswith('tissue'):                  
+                    shs = model.get_features.transpose(1, 2).view(-1, 3, sh_dim)
+                else:
+                    features = model.get_features_fourier(self.frame)
+                    shs = features.transpose(1, 2).view(-1, 3, sh_dim)
 
-        model_names.extend(self.graph_obj_list)
-
-        for model_name in model_names:
-            if model_name == 'background':                
-                model: GaussianModelBase= getattr(self, model_name)
-            else:
-                model: Union[GaussianModelActor,TissueGaussianModel] = getattr(self, model_name)
-            max_sh_degree = model.max_sh_degree
-            sh_dim = (max_sh_degree + 1) ** 2
-
-            if model_name == 'background':                  
-                shs = model.get_features.transpose(1, 2).view(-1, 3, sh_dim)
-            elif model_name == 'tissue':#jj
-                shs = model.get_features.transpose(1, 2).view(-1, 3, sh_dim)
-            else:
-                features = model.get_features_fourier(self.frame)
-                shs = features.transpose(1, 2).view(-1, 3, sh_dim)
-
-            directions = model.get_xyz - camera_center
-            directions = directions / torch.norm(directions, dim=1, keepdim=True)
-            from utils.sh_utils import eval_sh
-            sh2rgb = eval_sh(max_sh_degree, shs, directions)
-            color = torch.clamp_min(sh2rgb + 0.5, 0.)
-            colors.append(color)
-
+                directions = model.get_xyz - camera_center
+                directions = directions / torch.norm(directions, dim=1, keepdim=True)
+                from utils.sh_utils import eval_sh
+                sh2rgb = eval_sh(max_sh_degree, shs, directions)
+                color = torch.clamp_min(sh2rgb + 0.5, 0.)
+                colors.append(color)
         colors = torch.cat(colors, dim=0)
         return colors
                 
@@ -483,19 +435,12 @@ class MisGaussianModel(nn.Module):
     def get_semantic(self):
         assert 0
         semantics = []
-        if self.get_visibility('background'):
-            semantic_bkgd = self.background.get_semantic
-            semantics.append(semantic_bkgd)
-        if self.get_visibility('tissue'):
-            semantic_tissue = self.tissue.get_semantic
-            semantics.append(semantic_tissue)
-
-        for obj_name in self.graph_obj_list:
-            obj_model: GaussianModelActor = getattr(self, obj_name)
-            
-            semantic = obj_model.get_semantic
-        
-            semantics.append(semantic)
+        for model_name in self.model_name_id.keys():
+            if self.get_visibility(model_name=model_name):
+                if model_name.startswith('obj_') and model_name not in self.graph_obj_list:
+                    continue
+                semantic = getattr(self, model_name).get_semantic
+                semantics.append(semantic)
 
         semantics = torch.cat(semantics, dim=0)
         return semantics
@@ -503,20 +448,12 @@ class MisGaussianModel(nn.Module):
     @property
     def get_opacity(self):
         opacities = []
-        if self.get_visibility('background'):
-            opacity_bkgd = self.background.get_opacity
-            opacities.append(opacity_bkgd)
-        if self.get_visibility('tissue'):
-            opacity_tissue = self.tissue.get_opacity
-            opacities.append(opacity_tissue)
-
-        for obj_name in self.graph_obj_list:
-            obj_model: GaussianModelActor = getattr(self, obj_name)
-            
-            opacity = obj_model.get_opacity
-        
-            opacities.append(opacity)
-        
+        for model_name in self.model_name_id.keys():
+            if self.get_visibility(model_name=model_name):
+                if model_name.startswith('obj_') and model_name not in self.graph_obj_list:
+                    continue
+                opacity = getattr(self, model_name).get_opacity
+                opacities.append(opacity)
         opacities = torch.cat(opacities, dim=0)
         return opacities
             
@@ -524,28 +461,19 @@ class MisGaussianModel(nn.Module):
     def get_normals(self, camera: Camera):
         assert 0
         normals = []
-        
-        if self.get_visibility('background'):
-            normals_bkgd = self.background.get_normals(camera)            
-            normals.append(normals_bkgd)
-
-        if self.get_visibility('tissue'):
-            normals_tissue = self.tissue.get_normals(camera)            
-            normals.append(normals_tissue)
-
-        for i, obj_name in enumerate(self.graph_obj_list):
-            obj_model: GaussianModelActor = getattr(self, obj_name)
-            track_id = obj_model.track_id
-
-            normals_obj_local = obj_model.get_normals(camera) # [N, 3]
-                    
-            obj_rot = self.actor_pose.get_tracking_rotation(track_id, self.viewpoint_camera)
-            obj_rot = quaternion_to_matrix(obj_rot.unsqueeze(0)).squeeze(0)
-            
-            normals_obj_global = normals_obj_local @ obj_rot.T
-            normals_obj_global = torch.nn.functinal.normalize(normals_obj_global)                
-            normals.append(normals_obj_global)
-
+        for model_name in self.model_name_id.keys():
+            if self.get_visibility(model_name=model_name):
+                # process obj pose seperately
+                if model_name.startswith('obj_') and model_name not in self.graph_obj_list:
+                    continue
+                normal = getattr(self, model_name).get_normals(camera)
+                if model_name.startswith('obj_'):
+                    normal_local = normal
+                    obj_rot = self.actor_pose.get_tracking_rotation(obj_model.track_id, self.viewpoint_camera)
+                    obj_rot = quaternion_to_matrix(obj_rot.unsqueeze(0)).squeeze(0)
+                    normals_obj_global = normal_local @ obj_rot.T#local to global
+                    normal = torch.nn.functinal.normalize(normals_obj_global)                
+                normals.append(normal)
         normals = torch.cat(normals, dim=0)
         return normals
             
@@ -560,37 +488,32 @@ class MisGaussianModel(nn.Module):
         # sanity jj
         # the misgs-training under scene_reconstruction_misgs 
         # is controoled by misgs rather internall gaussians components
-        if 'tissue' in self.model_name_id.keys() \
-            and len(self.model_name_id.keys()) == 1:
-            assert self.max_sh_degree == self.tissue.max_sh_degree,'only support tissue only---the active_sh max_sh is consistent of tissue and misgs itself...'
-            assert self.active_sh_degree == self.tissue.active_sh_degree
+        # if 'tissue' in self.model_name_id.keys() \
+        #     and len(self.model_name_id.keys()) == 1:
+        #     assert self.max_sh_degree == self.tissue.max_sh_degree,'only support tissue only---the active_sh max_sh is consistent of tissue and misgs itself...'
+        #     assert self.active_sh_degree == self.tissue.active_sh_degree
 
     def training_setup(self, exclude_list=[]):
         self.active_sh_degree = 0
-
         for model_name in self.model_name_id.keys():
             if startswith_any(model_name, exclude_list):
                 continue
             model: Union[GaussianModelBase,TissueGaussianModel] = getattr(self, model_name)
-            if model_name == 'tissue':
+            if model_name.startswith('tissue'):
                 model.training_setup(training_args=self.cfg.optim)
             else:
                 assert 0,NotImplementedError
                 model.training_setup()
-
                 
         if self.actor_pose is not None:
             assert 0
             self.actor_pose.training_setup()
-        
         if self.sky_cubemap is not None:
             assert 0
             self.sky_cubemap.training_setup()
-            
         if self.color_correction is not None:
             assert 0
             self.color_correction.training_setup()
-            
         if self.pose_correction is not None:
             assert 0
             self.pose_correction.training_setup()
@@ -605,13 +528,10 @@ class MisGaussianModel(nn.Module):
         
         if self.actor_pose is not None:
             self.actor_pose.update_learning_rate(iteration)
-    
         if self.sky_cubemap is not None:
             self.sky_cubemap.update_learning_rate(iteration)
-            
         if self.color_correction is not None:
             self.color_correction.update_learning_rate(iteration)
-            
         if self.pose_correction is not None:
             self.pose_correction.update_learning_rate(iteration)
     
@@ -624,13 +544,10 @@ class MisGaussianModel(nn.Module):
 
         if self.actor_pose is not None:
             self.actor_pose.update_optimizer()
-        
         if self.sky_cubemap is not None:
             self.sky_cubemap.update_optimizer()
-            
         if self.color_correction is not None:
             self.color_correction.update_optimizer()
-            
         if self.pose_correction is not None:
             self.pose_correction.update_optimizer()
 
@@ -656,7 +573,6 @@ class MisGaussianModel(nn.Module):
 
         # assert 0,'not checked'
         viewspace_point_tensor_grad = viewspace_point_tensor.grad
-
         for model_name in self.graph_gaussian_range.keys():
             model: GaussianModelBase = getattr(self, model_name)
             start, end = self.graph_gaussian_range[model_name]
