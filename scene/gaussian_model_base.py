@@ -26,7 +26,7 @@ from typing import Tuple
 from utils.general_utils import strip_symmetric,build_scaling_rotation,quaternion_to_matrix
 from scene.cameras import Camera
 class GaussianModelBase(nn.Module):
-    def __init__(self, model_name='background', num_classes=1):
+    def __init__(self, model_name='kkk', num_classes=1):
         assert 0
         super().__init__()
         cfg_model = cfg.model.gaussian
@@ -41,9 +41,9 @@ class GaussianModelBase(nn.Module):
         # stree add 
         # spherical harmonics
         default_max_sh_degree = cfg_model.get('sh_degree')
-        if self.model_name == 'background':
+        if self.model_name.startswith('background'):
             self.max_sh_degree = cfg_model.get('sh_degree_background', default_max_sh_degree)
-        elif self.model_name == 'tissue':
+        elif self.model_name.startswith('tissue'):
             self.max_sh_degree = cfg_model.get('sh_degree_sky', default_max_sh_degree)
         elif self.model_name == 'sky':
             self.max_sh_degree = cfg_model.get('sh_degree_sky', default_max_sh_degree)

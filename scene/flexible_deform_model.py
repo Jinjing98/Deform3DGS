@@ -306,10 +306,11 @@ class TissueGaussianModel:
         attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation, \
                                      coefs), axis=1) # FDM added
         elements[:] = list(map(tuple, attributes))
-        el = PlyElement.describe(elements, 'vertex')
         if not only_make:
+            el = PlyElement.describe(elements, 'vertex')
             PlyData([el]).write(path)
-        return el
+        # return el
+        return elements
 
     def replace_tensor_to_optimizer(self, tensor, name):
         optimizable_tensors = {}

@@ -231,7 +231,7 @@ class EndoNeRF_Dataset(object):
             
             #jj---go through misgs
             # mostimporantly: faking the required cam_metadata by misgs
-            print('todo faking/fake some required cam_metadata by misgs')
+            # print('todo faking/fake some required cam_metadata by misgs')
             pose = np.eye(4)
             pose[:3,:3] = R
             pose[:3,-1] = T

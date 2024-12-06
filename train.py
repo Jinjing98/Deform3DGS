@@ -239,7 +239,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
-def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, expname, extra_mark):
+def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, expname, extra_mark,args = None):
     assert expname == args.model_path, f'{expname} {args.model_path}'
     tb_writer = prepare_output_and_logger(model_path=expname, write_args=args)
     gaussians = TissueGaussianModel(dataset.sh_degree, hyper)
@@ -281,6 +281,7 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
         from scene.mis_gaussian_model import MisGaussianModel
         if isinstance(scene.gaussians_or_controller, MisGaussianModel):
             print('todo During traning report we only do tissue')
+            # assert 0, scene.gaussians_or_controller.model
             tb_writer.add_scalar('total_points', scene.gaussians_or_controller.tissue.get_xyz.shape[0], iteration)
         else:
             tb_writer.add_scalar('total_points', scene.gaussians_or_controller.get_xyz.shape[0], iteration)
@@ -307,7 +308,7 @@ if __name__ == "__main__":
     # torch.set_default_tensor_type('torch.FloatTensor')
     torch.cuda.empty_cache()
     use_stree_grouping_strategy = True
-    use_stree_grouping_strategy = False
+    # use_stree_grouping_strategy = False
     if use_stree_grouping_strategy:
         use_streetgs_render = True #fail
         use_streetgs_render = False
@@ -362,7 +363,9 @@ if __name__ == "__main__":
     torch.autograd.set_detect_anomaly(args.detect_anomaly)
     if not use_stree_grouping_strategy:
         training(lp.extract(args), hp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, \
-            args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname, args.extra_mark)
+            args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname, 
+            extra_mark=args.extra_mark,
+            args = args)
     else:
         from train_utils_misgs import training_misgsmodel
         training_misgsmodel(args,use_streetgs_render = use_streetgs_render)

@@ -113,7 +113,7 @@ class MisGaussianRenderer():
         scaling_modifier = None, 
         override_color = None
     ):
-        pc.set_visibility(include_list=['background'])
+        pc.set_visibility(include_list=['background_model_name'])
         pc.parse_camera(viewpoint_camera)
         result = self.render_kernel(viewpoint_camera, pc, convert_SHs_python, compute_cov3D_python, scaling_modifier, override_color, white_background=True)
 
