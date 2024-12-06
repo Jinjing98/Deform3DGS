@@ -7,7 +7,7 @@ ModelParams = dict(
     #    support run for muti splits
     #    support hard changes iters
     init_mode = 'MAPF',#'MAPF', #'skipMAPF' #rand
-    tool_mask = 'use', #'use'(default) 'inverse' 'nouse'
+    tool_mask = 'inverse', #'use'(default) 'inverse' 'nouse'
 )
 
 
@@ -38,7 +38,8 @@ OptimizationParams = dict(
 )
 
 ModelHiddenParams = dict(
-    curve_num = 17, # number of learnable basis functions. This number was set to 17 for all the experiments in paper (https://arxiv.org/abs/2405.17835)
+    # set to 0 to disable FDM? render also need to set this to 0
+    curve_num = 17,#17, # number of learnable basis functions. This number was set to 17 for all the experiments in paper (https://arxiv.org/abs/2405.17835)
 
     ch_num = 10, # channel number of deformable attributes: 10 = 3 (scale) + 3 (mean) + 4 (rotation)
     init_param = 0.01, )

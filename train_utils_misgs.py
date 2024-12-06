@@ -336,7 +336,6 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
         # follow deform3dgs
         # print('todo Correct? ')
-        # viewspace_point_tensor_grad =  viewspace_point_tensor.grad
 
         iter_end.record()
         is_save_images = True
