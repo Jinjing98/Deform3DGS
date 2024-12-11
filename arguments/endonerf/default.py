@@ -7,7 +7,7 @@ ModelParams = dict(
     #    support run for muti splits
     #    support hard changes iters
     init_mode = 'MAPF',#'MAPF', #'skipMAPF' #rand
-    tool_mask = 'inverse', #'use'(default) 'inverse' 'nouse'
+    tool_mask = 'use', #'use'(default) 'inverse' 'nouse'
 )
 
 

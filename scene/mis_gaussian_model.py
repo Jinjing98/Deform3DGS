@@ -1,6 +1,6 @@
 from scene.flexible_deform_model import TissueGaussianModel 
 from scene.tool_movement_model import GaussianModelActor
-from scene.actor_pose import ActorPose
+# from scene.actor_pose import ActorPose
 import torch.nn as nn
 import torch
 import os
@@ -56,7 +56,8 @@ class MisGaussianModel(nn.Module):
                 f"not all names start_with background {self.candidate_model_names['bg_model']}"
             # assert len(self.candidate_model_names['bg_model'])==1,'later will use index[0]'
         if self.include_tissue:
-            self.candidate_model_names['tissue_model'] = ['tissue',
+            self.candidate_model_names['tissue_model'] = [
+                                                        'tissue',
                                                         # 'tissue_2nd',
                                                         ]
             

@@ -200,6 +200,7 @@ class EndoNeRF_Dataset(object):
                 mask = np.array(mask)  
             else:
                 assert 0, NotImplementedError
+            assert self.tool_mask == 'use',f' for misgs,we let tool_mask be use n get all masks'
             if self.tool_mask == 'use':
                 mask = 1 - np.array(mask) / 255.0
             elif self.tool_mask == 'inverse':
@@ -256,9 +257,10 @@ class EndoNeRF_Dataset(object):
             # load more other masks in addtion to mask...
             # if you want
             masks = {
-                "original_mask":mask,
-                # "tissue":mask,
+                # "tissue_mask":mask,
+                "tissue_mask":mask,
                 "tool_mask":~mask,
+                "no_mask":torch.ones_like(mask).bool().to(mask.device),
             }
 
             cam_info = CameraInfo(

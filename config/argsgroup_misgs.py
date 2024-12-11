@@ -192,9 +192,12 @@ class ModParams(ParamGroup_stree):
 
         self.nsg = CN()
         self.nsg.include_bkgd = False # include background
-        self.nsg.include_obj = False # include object
+        self.nsg.include_obj = False #True # include object
         self.nsg.include_sky = False # include sky cubemap
         self.nsg.opt_track = False # tracklets optimization
+        #jj extend
+        self.nsg.include_tissue = True # include background
+
         self.sky = CN()
         self.sky.resolution = 1024
         self.sky.white_background = True
@@ -214,8 +217,7 @@ class ModParams(ParamGroup_stree):
         ####
 
 
-        #jj extend
-        self.nsg.include_tissue = True # include background
+
 
         self.fdm = CN()
         self.fdm.net_width = 64

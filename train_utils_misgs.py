@@ -46,6 +46,130 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
+
+
+def misgs_other_loss(loss):
+    # sky loss
+    if optim_args.lambda_sky > 0 and controller.include_sky and sky_mask is not None:
+        assert 0, 'temp disabled '
+        acc = torch.clamp(acc, min=1e-6, max=1.-1e-6)
+        sky_loss = torch.where(sky_mask, -torch.log(1 - acc), -torch.log(acc)).mean()
+        if len(optim_args.lambda_sky_scale) > 0:
+            sky_loss *= optim_args.lambda_sky_scale[viewpoint_cam.meta['cam']]
+        scalar_dict['sky_loss'] = sky_loss.item()
+        loss += optim_args.lambda_sky * sky_loss
+
+    # semantic loss
+    if optim_args.lambda_semantic > 0 and data_args.get('use_semantic', False) and 'semantic' in viewpoint_cam.meta:
+        assert 0, 'temp disabled '
+        gt_semantic = viewpoint_cam.meta['semantic'].cuda().long() # [1, H, W]
+        if torch.all(gt_semantic == -1):
+            semantic_loss = torch.zeros_like(Ll1)
+        else:
+            semantic = render_pkg['semantic'].unsqueeze(0) # [1, S, H, W]
+            semantic_loss = torch.nn.functional.cross_entropy(
+                input=semantic, 
+                target=gt_semantic,
+                ignore_index=-1, 
+                reduction='mean'
+            )
+        scalar_dict['semantic_loss'] = semantic_loss.item()
+        loss += optim_args.lambda_semantic * semantic_loss
+    
+    if optim_args.lambda_reg > 0 and controller.include_obj and iteration >= optim_args.densify_until_iter:
+        assert 0, 'temp disabled '
+        render_pkg_obj = gaussians_renderer.render_object(viewpoint_cam, controller)
+        image_obj, acc_obj = render_pkg_obj["rgb"], render_pkg_obj['acc']
+        acc_obj = torch.clamp(acc_obj, min=1e-6, max=1.-1e-6)
+        # box_reg_loss = controller.get_box_reg_loss()
+        # scalar_dict['box_reg_loss'] = box_reg_loss.item()
+        # loss += optim_args.lambda_reg * box_reg_loss
+
+        obj_acc_loss = torch.where(obj_bound, 
+            -(acc_obj * torch.log(acc_obj) +  (1. - acc_obj) * torch.log(1. - acc_obj)), 
+            -torch.log(1. - acc_obj)).mean()
+        scalar_dict['obj_acc_loss'] = obj_acc_loss.item()
+        loss += optim_args.lambda_reg * obj_acc_loss
+        # obj_acc_loss = -((acc_obj * torch.log(acc_obj) +  (1. - acc_obj) * torch.log(1. - acc_obj))).mean()
+        # scalar_dict['obj_acc_loss'] = obj_acc_loss.item()
+        # loss += optim_args.lambda_reg * obj_acc_loss
+    
+    # lidar depth loss
+    if optim_args.lambda_depth_lidar > 0 and 'lidar_depth' in viewpoint_cam.meta:   
+        assert 0, 'temp disabled '
+        lidar_depth = viewpoint_cam.meta['lidar_depth'].cuda() # [1, H, W]
+        depth_mask = torch.logical_and((lidar_depth > 0.), mask)
+        # depth_mask[obj_bound] = False
+        if torch.nonzero(depth_mask).any():
+            expected_depth = depth / (render_pkg['acc'] + 1e-10)  
+            depth_error = torch.abs((expected_depth[depth_mask] - lidar_depth[depth_mask]))
+            depth_error, _ = torch.topk(depth_error, int(0.95 * depth_error.size(0)), largest=False)
+            lidar_depth_loss = depth_error.mean()
+            scalar_dict['lidar_depth_loss'] = lidar_depth_loss
+        else:
+            lidar_depth_loss = torch.zeros_like(Ll1)  
+        loss += optim_args.lambda_depth_lidar * lidar_depth_loss
+                
+    # color correction loss
+    if optim_args.lambda_color_correction > 0 and controller.use_color_correction:
+        assert 0, 'temp disabled '
+        color_correction_reg_loss = controller.color_correction.regularization_loss(viewpoint_cam)
+        scalar_dict['color_correction_reg_loss'] = color_correction_reg_loss.item()
+        loss += optim_args.lambda_color_correction * color_correction_reg_loss
+    
+    # pose correction loss
+    if optim_args.lambda_pose_correction > 0 and controller.use_pose_correction:
+        assert 0, 'temp disabled '
+        pose_correction_reg_loss = controller.pose_correction.regularization_loss()
+        scalar_dict['pose_correction_reg_loss'] = pose_correction_reg_loss.item()
+        loss += optim_args.lambda_pose_correction * pose_correction_reg_loss
+                
+    # scale flatten loss
+    if optim_args.lambda_scale_flatten > 0:
+        assert 0, 'temp disabled '
+        scale_flatten_loss = controller.background.scale_flatten_loss()
+        scalar_dict['scale_flatten_loss'] = scale_flatten_loss.item()
+        loss += optim_args.lambda_scale_flatten * scale_flatten_loss
+    
+    # opacity sparse loss
+    if optim_args.lambda_opacity_sparse > 0:
+        assert 0, 'temp disabled '
+        opacity = controller.get_opacity
+        opacity = opacity.clamp(1e-6, 1-1e-6)
+        log_opacity = opacity * torch.log(opacity)
+        log_one_minus_opacity = (1-opacity) * torch.log(1 - opacity)
+        sparse_loss = -1 * (log_opacity + log_one_minus_opacity)[visibility_filter].mean()
+        scalar_dict['opacity_sparse_loss'] = sparse_loss.item()
+        loss += optim_args.lambda_opacity_sparse * sparse_loss
+            
+    # normal loss
+    if optim_args.lambda_normal_mono > 0 and 'mono_normal' in viewpoint_cam.meta and 'normals' in render_pkg:
+        assert 0, 'temp disabled '
+        if sky_mask is None:
+            normal_mask = mask
+        else:
+            normal_mask = torch.logical_and(mask, ~sky_mask)
+            normal_mask = normal_mask.squeeze(0)
+            normal_mask[:50] = False
+            
+        normal_gt = viewpoint_cam.meta['mono_normal'].permute(1, 2, 0).cuda() # [H, W, 3]
+        R_c2w = viewpoint_cam.world_view_transform[:3, :3]
+        normal_gt = torch.matmul(normal_gt, R_c2w.T) # to world space
+        normal_pred = render_pkg['normals'].permute(1, 2, 0) # [H, W, 3]    
+        
+        normal_l1_loss = torch.abs(normal_pred[normal_mask] - normal_gt[normal_mask]).mean()
+        normal_cos_loss = (1. - torch.sum(normal_pred[normal_mask] * normal_gt[normal_mask], dim=-1)).mean()
+        scalar_dict['normal_l1_loss'] = normal_l1_loss.item()
+        scalar_dict['normal_cos_loss'] = normal_cos_loss.item()
+        normal_loss = normal_l1_loss + normal_cos_loss
+        loss += optim_args.lambda_normal_mono * normal_loss
+        
+    
+    return loss
+
+
+
+
 # def training_misgsmodel(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, expname, extra_mark):
 def training_misgsmodel(args,use_streetgs_render = False):
     other_param_dict = None
@@ -156,10 +280,12 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
         gt_image = viewpoint_cam.original_image.cuda()
 
-        if hasattr(viewpoint_cam, 'original_mask'):# tissue mask
-            mask = viewpoint_cam.original_mask.cuda().bool()
+
+
+        if hasattr(viewpoint_cam, 'tissue_mask'):# tissue mask
+            tissue_mask = viewpoint_cam.tissue_mask.cuda().bool()
         else:
-            mask = torch.ones_like(gt_image[0:1]).bool()
+            tissue_mask = torch.ones_like(gt_image[0:1]).bool()
 
         if hasattr(viewpoint_cam, 'tool_mask'):# tissue mask
             tool_mask = viewpoint_cam.tool_mask.cuda().bool()
@@ -176,6 +302,11 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         else:
             obj_bound = torch.zeros_like(gt_image[0:1]).bool()
         
+
+
+
+
+
         if (iteration - 1) == training_args.debug_from:
             cfg.render.debug = True
             
@@ -194,16 +325,25 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
         from utils.loss_utils import l1_loss
 
-        # tissue loss
-        Ll1 = l1_loss(image, gt_image, mask)
-        scalar_dict['l1_loss'] = Ll1.item()
-        loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + optim_args.lambda_dssim * (1.0 - ssim(image.to(torch.double), gt_image.to(torch.double), mask=mask))
-        print('Missing Depth loss...')
 
-        # hard code tool_loss 
-        hard_code_tool_loss = True
-        hard_code_tool_loss = False
-        if hard_code_tool_loss:
+
+        if cfg.model.nsg.include_tissue:
+            Ll1 = l1_loss(image, gt_image, tissue_mask)
+            scalar_dict['l1_loss'] = Ll1.item()
+            loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + \
+                optim_args.lambda_dssim * (1.0 - ssim(image.to(torch.double), \
+                                                      gt_image.to(torch.double), mask=tissue_mask))
+            print('Missing Depth loss...')
+        else:
+            assert 0,'alwasy include tissue'
+
+        print('todo')
+
+        # # hard code tool_loss 
+        # hard_code_tool_loss = True
+        # hard_code_tool_loss = False
+        if cfg.model.nsg.include_obj:
+        # if hard_code_tool_loss:
             Ll1_tool = l1_loss(image, gt_image, tool_mask)
             scalar_dict['l1_tool_loss'] = Ll1_tool.item()
             tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
@@ -213,122 +353,6 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
 
 
-
-        # sky loss
-        if optim_args.lambda_sky > 0 and controller.include_sky and sky_mask is not None:
-            assert 0, 'temp disabled '
-            acc = torch.clamp(acc, min=1e-6, max=1.-1e-6)
-            sky_loss = torch.where(sky_mask, -torch.log(1 - acc), -torch.log(acc)).mean()
-            if len(optim_args.lambda_sky_scale) > 0:
-                sky_loss *= optim_args.lambda_sky_scale[viewpoint_cam.meta['cam']]
-            scalar_dict['sky_loss'] = sky_loss.item()
-            loss += optim_args.lambda_sky * sky_loss
-
-        # semantic loss
-        if optim_args.lambda_semantic > 0 and data_args.get('use_semantic', False) and 'semantic' in viewpoint_cam.meta:
-            assert 0, 'temp disabled '
-            gt_semantic = viewpoint_cam.meta['semantic'].cuda().long() # [1, H, W]
-            if torch.all(gt_semantic == -1):
-                semantic_loss = torch.zeros_like(Ll1)
-            else:
-                semantic = render_pkg['semantic'].unsqueeze(0) # [1, S, H, W]
-                semantic_loss = torch.nn.functional.cross_entropy(
-                    input=semantic, 
-                    target=gt_semantic,
-                    ignore_index=-1, 
-                    reduction='mean'
-                )
-            scalar_dict['semantic_loss'] = semantic_loss.item()
-            loss += optim_args.lambda_semantic * semantic_loss
-        
-        if optim_args.lambda_reg > 0 and controller.include_obj and iteration >= optim_args.densify_until_iter:
-            assert 0, 'temp disabled '
-            render_pkg_obj = gaussians_renderer.render_object(viewpoint_cam, controller)
-            image_obj, acc_obj = render_pkg_obj["rgb"], render_pkg_obj['acc']
-            acc_obj = torch.clamp(acc_obj, min=1e-6, max=1.-1e-6)
-            # box_reg_loss = controller.get_box_reg_loss()
-            # scalar_dict['box_reg_loss'] = box_reg_loss.item()
-            # loss += optim_args.lambda_reg * box_reg_loss
-
-            obj_acc_loss = torch.where(obj_bound, 
-                -(acc_obj * torch.log(acc_obj) +  (1. - acc_obj) * torch.log(1. - acc_obj)), 
-                -torch.log(1. - acc_obj)).mean()
-            scalar_dict['obj_acc_loss'] = obj_acc_loss.item()
-            loss += optim_args.lambda_reg * obj_acc_loss
-            # obj_acc_loss = -((acc_obj * torch.log(acc_obj) +  (1. - acc_obj) * torch.log(1. - acc_obj))).mean()
-            # scalar_dict['obj_acc_loss'] = obj_acc_loss.item()
-            # loss += optim_args.lambda_reg * obj_acc_loss
-        
-        # lidar depth loss
-        if optim_args.lambda_depth_lidar > 0 and 'lidar_depth' in viewpoint_cam.meta:   
-            assert 0, 'temp disabled '
-            lidar_depth = viewpoint_cam.meta['lidar_depth'].cuda() # [1, H, W]
-            depth_mask = torch.logical_and((lidar_depth > 0.), mask)
-            # depth_mask[obj_bound] = False
-            if torch.nonzero(depth_mask).any():
-                expected_depth = depth / (render_pkg['acc'] + 1e-10)  
-                depth_error = torch.abs((expected_depth[depth_mask] - lidar_depth[depth_mask]))
-                depth_error, _ = torch.topk(depth_error, int(0.95 * depth_error.size(0)), largest=False)
-                lidar_depth_loss = depth_error.mean()
-                scalar_dict['lidar_depth_loss'] = lidar_depth_loss
-            else:
-                lidar_depth_loss = torch.zeros_like(Ll1)  
-            loss += optim_args.lambda_depth_lidar * lidar_depth_loss
-                    
-        # color correction loss
-        if optim_args.lambda_color_correction > 0 and controller.use_color_correction:
-            assert 0, 'temp disabled '
-            color_correction_reg_loss = controller.color_correction.regularization_loss(viewpoint_cam)
-            scalar_dict['color_correction_reg_loss'] = color_correction_reg_loss.item()
-            loss += optim_args.lambda_color_correction * color_correction_reg_loss
-        
-        # pose correction loss
-        if optim_args.lambda_pose_correction > 0 and controller.use_pose_correction:
-            assert 0, 'temp disabled '
-            pose_correction_reg_loss = controller.pose_correction.regularization_loss()
-            scalar_dict['pose_correction_reg_loss'] = pose_correction_reg_loss.item()
-            loss += optim_args.lambda_pose_correction * pose_correction_reg_loss
-                    
-        # scale flatten loss
-        if optim_args.lambda_scale_flatten > 0:
-            assert 0, 'temp disabled '
-            scale_flatten_loss = controller.background.scale_flatten_loss()
-            scalar_dict['scale_flatten_loss'] = scale_flatten_loss.item()
-            loss += optim_args.lambda_scale_flatten * scale_flatten_loss
-        
-        # opacity sparse loss
-        if optim_args.lambda_opacity_sparse > 0:
-            assert 0, 'temp disabled '
-            opacity = controller.get_opacity
-            opacity = opacity.clamp(1e-6, 1-1e-6)
-            log_opacity = opacity * torch.log(opacity)
-            log_one_minus_opacity = (1-opacity) * torch.log(1 - opacity)
-            sparse_loss = -1 * (log_opacity + log_one_minus_opacity)[visibility_filter].mean()
-            scalar_dict['opacity_sparse_loss'] = sparse_loss.item()
-            loss += optim_args.lambda_opacity_sparse * sparse_loss
-                
-        # normal loss
-        if optim_args.lambda_normal_mono > 0 and 'mono_normal' in viewpoint_cam.meta and 'normals' in render_pkg:
-            assert 0, 'temp disabled '
-            if sky_mask is None:
-                normal_mask = mask
-            else:
-                normal_mask = torch.logical_and(mask, ~sky_mask)
-                normal_mask = normal_mask.squeeze(0)
-                normal_mask[:50] = False
-                
-            normal_gt = viewpoint_cam.meta['mono_normal'].permute(1, 2, 0).cuda() # [H, W, 3]
-            R_c2w = viewpoint_cam.world_view_transform[:3, :3]
-            normal_gt = torch.matmul(normal_gt, R_c2w.T) # to world space
-            normal_pred = render_pkg['normals'].permute(1, 2, 0) # [H, W, 3]    
-            
-            normal_l1_loss = torch.abs(normal_pred[normal_mask] - normal_gt[normal_mask]).mean()
-            normal_cos_loss = (1. - torch.sum(normal_pred[normal_mask] * normal_gt[normal_mask], dim=-1)).mean()
-            scalar_dict['normal_l1_loss'] = normal_l1_loss.item()
-            scalar_dict['normal_cos_loss'] = normal_cos_loss.item()
-            normal_loss = normal_l1_loss + normal_cos_loss
-            loss += optim_args.lambda_normal_mono * normal_loss
-            
         scalar_dict['loss'] = loss.item()
 
         loss.backward()
@@ -372,11 +396,16 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             tensor_dict = dict()
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
-            ema_psnr_for_log = 0.4 * psnr(image, gt_image, mask).mean().float() + 0.6 * ema_psnr_for_log
-            if viewpoint_cam.id not in psnr_dict:
-                psnr_dict[viewpoint_cam.id] = psnr(image, gt_image, mask).mean().float()
+            if cfg.model.nsg.include_tissue:
+                ema_psnr_for_log = 0.4 * psnr(image, gt_image, tissue_mask).mean().float() + 0.6 * ema_psnr_for_log
+                if viewpoint_cam.id not in psnr_dict:
+                    psnr_dict[viewpoint_cam.id] = psnr(image, gt_image, tissue_mask).mean().float()
+                else:
+                    psnr_dict[viewpoint_cam.id] = 0.4 * psnr(image, gt_image, tissue_mask).mean().float() + 0.6 * psnr_dict[viewpoint_cam.id]
             else:
-                psnr_dict[viewpoint_cam.id] = 0.4 * psnr(image, gt_image, mask).mean().float() + 0.6 * psnr_dict[viewpoint_cam.id]
+                assert 0,'alwasy include tissue'
+            print('todo ?')            
+
             if iteration % 10 == 0:
                 progress_bar.set_postfix({"Exp": f"{cfg.task}-{cfg.exp_name}", 
                                           "Loss": f"{ema_loss_for_log:.{7}f},", 
@@ -493,13 +522,26 @@ def training_report_misgs(tb_writer, iteration, scalar_stats, tensor_stats, test
                         if iteration == testing_iterations[0]:
                             tb_writer.add_images(config['name'] + "_{}/ground_truth".format(viewpoint.image_name), gt_image[None], global_step=iteration)
                     
-                    if hasattr(viewpoint, 'original_mask'):
-                        mask = viewpoint.original_mask.cuda().bool()
+                    # try to get all the masks
+                    if hasattr(viewpoint, 'tissue_mask'):
+                        tissue_mask = viewpoint.tissue_mask.cuda().bool()
                     else:
-                        mask = torch.ones_like(gt_image[0]).bool()
-                    from utils.loss_utils import l1_loss
-                    l1_test += l1_loss(image, gt_image, mask).mean().double()
-                    psnr_test += psnr(image, gt_image, mask).mean().double()
+                        tissue_mask = torch.ones_like(gt_image[0]).bool()
+                    
+                    # self.nsg.include_obj = False #True # include object
+                    # self.nsg.opt_track = False # tracklets optimization
+                    # always have tissue in the background
+                    if cfg.model.nsg.include_tissue:
+                        from utils.loss_utils import l1_loss
+                        l1_test += l1_loss(image, gt_image, tissue_mask).mean().double()
+                        psnr_test += psnr(image, gt_image, tissue_mask).mean().double()
+                    else:
+                        assert 0,'always include tissue'
+
+                    print('todo')
+
+
+
 
                 psnr_test /= len(config['cameras'])
                 l1_test /= len(config['cameras'])
