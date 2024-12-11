@@ -1,10 +1,24 @@
+import torch
+import torch.nn as nn
+import numpy as np
+import os
+from scene.gaussian_model_base import GaussianModelBase
+from utils.general_utils import quaternion_to_matrix, inverse_sigmoid, matrix_to_quaternion, get_expon_lr_func, quaternion_raw_multiply
+from utils.sh_utils import RGB2SH, IDFT
+from scene.dataset_readers import fetchPly
+from plyfile import PlyData, PlyElement
+from simple_knn._C import distCUDA2
+
+
 from scene.gaussian_model_base import GaussianModelBase
 class GaussianModelActor(GaussianModelBase):
     def __init__(
         self, 
         model_name, 
         obj_meta, 
+        cfg,
     ):
+        self.cfg = cfg
         # parse obj_meta
         self.obj_meta = obj_meta
         
@@ -18,8 +32,8 @@ class GaussianModelActor(GaussianModelBase):
         self.track_id = obj_meta['track_id']
         
         # fourier spherical harmonics
-        self.fourier_dim = cfg.model.gaussian.get('fourier_dim', 1)
-        self.fourier_scale = cfg.model.gaussian.get('fourier_scale', 1.)
+        self.fourier_dim = self.cfg.model.gaussian.get('fourier_dim', 1)
+        self.fourier_scale = self.cfg.model.gaussian.get('fourier_scale', 1.)
         
         # bbox
         length, width, height = obj_meta['length'], obj_meta['width'], obj_meta['height']
@@ -27,14 +41,14 @@ class GaussianModelActor(GaussianModelBase):
         xyz = torch.tensor(self.bbox).float().cuda()
         self.min_xyz, self.max_xyz =  -xyz/2., xyz/2.  
         
-        extent = max(length*1.5/cfg.data.box_scale, width*1.5/cfg.data.box_scale, height) / 2.
+        extent = max(length*1.5/self.cfg.data.box_scale, width*1.5/self.cfg.data.box_scale, height) / 2.
         self.extent = torch.tensor([extent]).float().cuda()   
 
-        num_classes = 1 if cfg.data.get('use_semantic', False) else 0
-        self.num_classes_global = cfg.data.num_classes if cfg.data.get('use_semantic', False) else 0        
+        num_classes = 1 if self.cfg.data.get('use_semantic', False) else 0
+        self.num_classes_global = self.cfg.data.num_classes if self.cfg.data.get('use_semantic', False) else 0        
         super().__init__(model_name=model_name, num_classes=num_classes)
         
-        self.flip_prob = cfg.model.gaussian.get('flip_prob', 0.) if not self.deformable else 0.
+        self.flip_prob = self.cfg.model.gaussian.get('flip_prob', 0.) if not self.deformable else 0.
         self.flip_axis = 1 
 
         self.spatial_lr_scale = extent
@@ -71,7 +85,7 @@ class GaussianModelActor(GaussianModelBase):
         return features
            
     def create_from_pcd(self, spatial_lr_scale):
-        pointcloud_path = os.path.join(cfg.model_path, 'input_ply', f'points3D_{self.model_name}.ply')   
+        pointcloud_path = os.path.join(self.cfg.model_path, 'input_ply', f'points3D_{self.model_name}.ply')   
         if os.path.exists(pointcloud_path):
             pcd = fetchPly(pointcloud_path)
             pointcloud_xyz = np.asarray(pcd.points)
@@ -152,7 +166,7 @@ class GaussianModelActor(GaussianModelBase):
 
 
     def training_setup(self):
-        args = cfg.optim
+        args = self.cfg.optim
 
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 2), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
@@ -194,8 +208,8 @@ class GaussianModelActor(GaussianModelBase):
             
     def densify_and_prune(self, max_grad, min_opacity, prune_big_points):
         if not (self.random_initialization or self.deformable):
-            max_grad = cfg.optim.get('densify_grad_threshold_obj', max_grad)
-            if cfg.optim.get('densify_grad_abs_obj', False):
+            max_grad = self.cfg.optim.get('densify_grad_threshold_obj', max_grad)
+            if self.cfg.optim.get('densify_grad_abs_obj', False):
                 grads = self.xyz_gradient_accum[:, 1:2] / self.denom
             else:
                 grads = self.xyz_gradient_accum[:, 0:1] / self.denom

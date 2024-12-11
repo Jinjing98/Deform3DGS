@@ -1,5 +1,6 @@
 from scene.flexible_deform_model import TissueGaussianModel 
 from scene.tool_movement_model import GaussianModelActor
+from scene.actor_pose import ActorPose
 import torch.nn as nn
 import torch
 import os
@@ -12,6 +13,8 @@ from scene.cameras import Camera
 from scene.gaussian_model_base import GaussianModelBase
 from plyfile import PlyData, PlyElement
 from typing import Union
+from utils.general_utils import quaternion_raw_multiply
+
 class MisGaussianModel(nn.Module):
     def __init__(self, metadata,new_cfg):
         super().__init__()
@@ -25,7 +28,7 @@ class MisGaussianModel(nn.Module):
         # jj
         self.include_tissue =self.cfg.model.nsg.get('include_tissue', True)
         self.include_background =self.cfg.model.nsg.get('include_bkgd', False)
-        self.include_obj =self.cfg.model.nsg.get('include_obj', False)
+        self.include_obj =self.cfg.model.nsg.get('include_obj', False) #False)
         # sky (modeling sky with gaussians, if set to false represent the sky with cube map)
         self.include_sky =self.cfg.model.nsg.get('include_sky', False) 
         if self.include_sky:
@@ -60,7 +63,10 @@ class MisGaussianModel(nn.Module):
             assert torch.Tensor([ name.startswith('tissue') for name in self.candidate_model_names['tissue_model']]).all(),\
                 f"not all names start_with tissue {self.candidate_model_names['tissue_model']}"
         if self.include_obj:
-            model_names_obj = []
+            model_names_obj = [
+
+            ]
+
             for track_id, _ in self.metadata['obj_meta'].items():
                 model_names_obj.extend( f'obj_{track_id:03d}')
             self.candidate_model_names['obj_model_cand']= model_names_obj
@@ -106,25 +112,66 @@ class MisGaussianModel(nn.Module):
         if self.include_obj:
             model_names = self.candidate_model_names['obj_model_cand']
             for model_name in model_names:
-                model = GaussianModelActor(model_name=model_name, 
-                                           obj_meta=self.obj_info[model_name],
-                                           )
+                # ToolModel
+                from scene.tool_model import ToolModel
+                model = ToolModel(model_args = self.cfg.gaussian)
+                # model = GaussianModelActor(model_name=model_name, 
+                #                            obj_meta=self.obj_info[model_name],
+                #                            cfg = self.cfg,
+                #                            )
                 setattr(self, model_name, model)
                 self.model_name_id[model_name] = self.models_num
                 self.models_num += 1
                 self.obj_list.append(model_name)
-                
+            # Build actor model 
+            from scene.tool_pose import ToolPose
+
+            # def __init__(self, 
+            #             frames_num,
+            #             objs_num = 1,
+            #             timestamps = None, 
+            #             #  obj_info, 
+            #             cfg_optim = None,
+            #             opt_track = True):
+            # self.actor_pose = ToolPose(frames_num=,
+            #                            objs_num=1,
+            #                            timestamps=camera_timestamps,
+            #                            cfg_optim=self.cfg.optim,
+            #                            opt_track=self.cfg.model.nsg.opt_track)
+
+
+            # def find_closest_camera_timestamps(self, track_id, camera: Camera):
+            #     timestamp = camera.meta['timestamp']
+            #     cam = camera.meta['cam']
+            #     camera_timestamps = self.camera_timestamps[cam]['train_timestamps']
+            #     start_timestamp = self.obj_info[track_id]['start_timestamp']
+            #     end_timestamp = self.obj_info[track_id]['end_timestamp']
+            #     camera_timestamps = np.array([x for x in camera_timestamps if x >= start_timestamp and x <= end_timestamp])
+            #     if len(camera_timestamps) < 2:
+            #         return None, None
+            #     else:
+            #         delta_timestamps = np.abs(camera_timestamps - timestamp)
+            #         idx1, idx2 = np.argsort(delta_timestamps)[:2]            
+            #         return camera_timestamps[idx1], camera_timestamps[idx2]
+                    
+
+
+
+            self.actor_pose = ActorPose(obj_tracklets, 
+                                        tracklet_timestamps, 
+                                        camera_timestamps, 
+                                        obj_info,
+                                        opt_track = self.cfg.model.nsg.opt_track)
+        else:
+            self.actor_pose = None
+
+
+
         # Build sky model
         if self.include_sky:
             self.sky_cubemap = SkyCubeMap()    
         else:
             self.sky_cubemap = None    
-                             
-        # Build actor model 
-        if self.include_obj:
-            self.actor_pose = ActorPose(obj_tracklets, tracklet_timestamps, camera_timestamps, obj_info)
-        else:
-            self.actor_pose = None
 
         # Build color correction
         if self.use_color_correction:
@@ -175,6 +222,11 @@ class MisGaussianModel(nn.Module):
                 print('Try to be the same at first')
                 model.create_from_pcd(pcd = pcd, spatial_lr_scale = spatial_lr_scale, 
                                       time_line = time_line)
+            elif model_name.startswith('obj_'):
+                model: GaussianModelActor = getattr(self, model_name)
+                print('todo')
+                model.create_from_pcd(pcd = pcd, spatial_lr_scale = spatial_lr_scale, 
+                                      time_line = time_line)
             else:
                 model: GaussianModelBase = getattr(self, model_name)
                 if model_name.startswith('background') or model_name in ['sky']:
@@ -195,7 +247,6 @@ class MisGaussianModel(nn.Module):
                 plydata = PlyElement.describe(plydata, f'vertex_{model_name}')
             except:
                 assert isinstance(model,TissueGaussianModel)
-                print('tisseu model save and makr together?')
                 plydata = model.save_ply(path = path,
                                          only_make = True)
                 plydata = PlyElement.describe(plydata, f'vertex_{model_name}')

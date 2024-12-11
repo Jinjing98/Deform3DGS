@@ -16,6 +16,50 @@ import numpy as np
 import random
 import cv2
 import torch.nn.functional as F
+import roma
+
+def quaternion_slerp(q0: torch.Tensor, q1: torch.Tensor, step=0.5) -> torch.Tensor:
+    # https://github.com/clemense/quaternion-conventions
+    # 3D Gaussian Format: w-x-y-z Roma Format: x-y-z-w
+
+    ndim = q0.ndim
+    if ndim == 1:
+        q0 = q0.unsqueeze(0)
+        q1 = q1.unsqueeze(0)
+        
+    q0 = torch.nn.functional.normalize(q0)
+    q1 = torch.nn.functional.normalize(q1)
+    q0 = q0[..., [1, 2, 3, 0]]
+    q1 = q1[..., [1, 2, 3, 0]]
+    steps = torch.tensor([step], device=q1.device).float()
+    q = roma.utils.unitquat_slerp(q0, q1, steps) 
+    q = q[..., [3, 0, 1, 2]].squeeze(0)
+    
+    if ndim == 1:
+        q = q.squeeze(0)
+    
+    return q
+
+
+def quaternion_raw_multiply(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
+    """
+    Multiply two quaternions.
+    Usual torch rules for broadcasting apply.
+
+    Args:
+        a: Quaternions as tensor of shape (..., 4), real part first.
+        b: Quaternions as tensor of shape (..., 4), real part first.
+
+    Returns:
+        The product of a and b, a tensor of quaternions shape (..., 4).
+    """
+    aw, ax, ay, az = torch.unbind(a, -1)
+    bw, bx, by, bz = torch.unbind(b, -1)
+    ow = aw * bw - ax * bx - ay * by - az * bz
+    ox = aw * bx + ax * bw + ay * bz - az * by
+    oy = aw * by - ax * bz + ay * bw + az * bx
+    oz = aw * bz + ax * by - ay * bx + az * bw
+    return torch.stack((ow, ox, oy, oz), -1)
 
 def inpaint_rgb(rgb_image, mask):
     # Convert mask to uint8
