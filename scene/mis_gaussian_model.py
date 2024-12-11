@@ -26,11 +26,21 @@ class MisGaussianModel(nn.Module):
 
         # background + moving objects
         # jj
-        self.include_tissue =self.cfg.model.nsg.get('include_tissue', True)
-        self.include_background =self.cfg.model.nsg.get('include_bkgd', False)
-        self.include_obj =self.cfg.model.nsg.get('include_obj', False) #False)
-        # sky (modeling sky with gaussians, if set to false represent the sky with cube map)
-        self.include_sky =self.cfg.model.nsg.get('include_sky', False) 
+        # self.include_tissue =self.cfg.model.nsg.get('include_tissue', True)
+        # self.include_background =self.cfg.model.nsg.get('include_bkgd', False)
+        # self.include_obj =self.cfg.model.nsg.get('include_obj', False) #False)
+        # # sky (modeling sky with gaussians, if set to false represent the sky with cube map)
+        # self.include_sky =self.cfg.model.nsg.get('include_sky', False) 
+
+
+
+        self.include_tissue =self.cfg.model.nsg.include_tissue #get('include_tissue', True)
+        self.include_obj =self.cfg.model.nsg.include_obj#get('include_obj', False) #False)
+        self.include_background =self.cfg.model.nsg.include_bkgd#get('include_bkgd', False)
+        self.include_sky =self.cfg.model.nsg.include_sky#get('include_sky', False) 
+
+
+
         if self.include_sky:
             assert self.cfg.data.white_background is False
         # fourier sh dimensions
@@ -58,6 +68,7 @@ class MisGaussianModel(nn.Module):
         if self.include_tissue:
             self.candidate_model_names['tissue_model'] = [
                                                         'tissue',
+                                                        # 'tissue_2',
                                                         # 'tissue_2nd',
                                                         ]
             
@@ -65,11 +76,11 @@ class MisGaussianModel(nn.Module):
                 f"not all names start_with tissue {self.candidate_model_names['tissue_model']}"
         if self.include_obj:
             model_names_obj = [
-
+                'obj_tool1'
             ]
 
-            for track_id, _ in self.metadata['obj_meta'].items():
-                model_names_obj.extend( f'obj_{track_id:03d}')
+            # for track_id, _ in self.metadata['obj_meta'].items():
+            #     model_names_obj.extend( f'obj_{track_id:03d}')
             self.candidate_model_names['obj_model_cand']= model_names_obj
         #/////////////////////////////
         self.setup_functions() 
@@ -115,7 +126,7 @@ class MisGaussianModel(nn.Module):
             for model_name in model_names:
                 # ToolModel
                 from scene.tool_model import ToolModel
-                model = ToolModel(model_args = self.cfg.gaussian)
+                model = ToolModel(model_args = self.cfg.model.gaussian)
                 # model = GaussianModelActor(model_name=model_name, 
                 #                            obj_meta=self.obj_info[model_name],
                 #                            cfg = self.cfg,
@@ -330,6 +341,8 @@ class MisGaussianModel(nn.Module):
                     if timestamp >= start_timestamp and timestamp <= end_timestamp and self.get_visibility(obj_name):
                         self.num_gaussians += model.get_xyz.shape[0]
                         self.graph_obj_list.append(model_name)
+                    else:
+                        assert 0,f'the timestamp is not included?'
                 else:
                     self.num_gaussians += model.get_xyz.shape[0]
         # set index range
