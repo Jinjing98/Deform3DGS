@@ -52,6 +52,75 @@ class ToolModel:
         # self._deformation_table = torch.empty(0)
 
         self.setup_functions()
+           
+    def create_from_pcd_streetActor(self, spatial_lr_scale, pcd = None):
+        # pointcloud_path = os.path.join(cfg.model_path, 'input_ply', f'points3D_{self.model_name}.ply')   
+        # if os.path.exists(pointcloud_path):
+        #     pcd = fetchPly(pointcloud_path)
+        #     pointcloud_xyz = np.asarray(pcd.points)
+        #     if pointcloud_xyz.shape[0] < 2000:
+        #         self.random_initialization = True
+        #     else:
+        #         self.random_initialization = False
+        # else:
+        #     self.random_initialization = True
+
+
+        # self.random_initialization = True
+
+        # if self.random_initialization is True:
+        #     assert 0,f'todo 3D bb version init'
+        #     points_dim = 20
+        #     print(f'Creating random pointcloud for {self.model_name}')
+        #     points_x, points_y, points_z = np.meshgrid(
+        #         np.linspace(-1., 1., points_dim), np.linspace(-1., 1., points_dim), np.linspace(-1., 1., points_dim),
+        #     )
+            
+        #     points_x = points_x.reshape(-1)
+        #     points_y = points_y.reshape(-1)
+        #     points_z = points_z.reshape(-1)
+
+        #     bbox_xyz_scale = self.bbox / 2.
+        #     pointcloud_xyz = np.stack([points_x, points_y, points_z], axis=-1)
+        #     pointcloud_xyz = pointcloud_xyz * bbox_xyz_scale            
+        #     pointcloud_rgb = np.random.rand(*pointcloud_xyz.shape).astype(np.float32)  
+
+        pointcloud_xyz = np.asarray(pcd.points)
+        pointcloud_rgb = np.asarray(pcd.colors)
+            
+        fused_point_cloud = torch.tensor(np.asarray(pointcloud_xyz)).float().cuda()
+        fused_color = RGB2SH(torch.tensor(np.asarray(pointcloud_rgb)).float().cuda())
+
+        # features = torch.zeros((fused_color.shape[0], 3, 
+        #                         (self.max_sh_degree + 1) ** 2 * self.fourier_dim)).float().cuda()
+        # features[:, :3, 0] = fused_color
+        features_dc = torch.zeros((fused_color.shape[0], 3, self.fourier_dim)).float().cuda()
+        features_rest = torch.zeros(fused_color.shape[0], 3, (self.max_sh_degree + 1) ** 2 - 1).float().cuda()
+        features_dc[:, :3, 0] = fused_color
+
+        print(f"Number of points at initialisation for {self.model_name}: ", fused_point_cloud.shape[0])
+        dist2 = torch.clamp_min(distCUDA2(torch.from_numpy(np.asarray(pointcloud_xyz)).float().cuda()), 0.0000001)
+        scales = torch.log(torch.sqrt(dist2))[..., None].repeat(1, 3)
+        rots = torch.zeros((fused_point_cloud.shape[0], 4)).cuda()
+        rots[:, 0] = 1
+
+        opacities = inverse_sigmoid(0.1 * torch.ones((fused_point_cloud.shape[0], 1))).float().cuda()
+        # semantics = torch.zeros((fused_point_cloud.shape[0], self.num_classes)).float().cuda()
+        self._xyz = nn.Parameter(fused_point_cloud.requires_grad_(True))
+        
+        # self._features_dc = nn.Parameter(features[:, :, :self.fourier_dim].transpose(1, 2).contiguous().requires_grad_(True))
+        # self._features_rest = nn.Parameter(features[:, :, self.fourier_dim:].transpose(1, 2).contiguous().requires_grad_(True))
+        self._features_dc = nn.Parameter(features_dc.transpose(1, 2).contiguous().requires_grad_(True))
+        self._features_rest = nn.Parameter(features_rest.transpose(1, 2).contiguous().requires_grad_(True))
+        
+        self._scaling = nn.Parameter(scales.requires_grad_(True))
+        self._rotation = nn.Parameter(rots.requires_grad_(True))
+        self._opacity = nn.Parameter(opacities.requires_grad_(True))
+        # self._semantic = nn.Parameter(semantics.requires_grad_(True))
+        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+
+
+
     def create_from_pcd(self, pcd : BasicPointCloud, spatial_lr_scale : float, \
                         time_line: int):# FDM add
         self.spatial_lr_scale = spatial_lr_scale
@@ -69,7 +138,7 @@ class ToolModel:
         rots[:, 0] = 1
 
         # init the ToolPose model:
-        assert 0
+        # assert 0
 
         
         # # FDM add
@@ -89,8 +158,13 @@ class ToolModel:
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
         # FDM added
-        self._deformation_table = torch.gt(torch.ones((self.get_xyz.shape[0]),device="cuda"),0)
+        # self._deformation_table = torch.gt(torch.ones((self.get_xyz.shape[0]),device="cuda"),0)
     
+
+
+
+
+
 
     def setup_functions(self):
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
@@ -188,7 +262,7 @@ class ToolModel:
             {'params': [self._opacity], 'lr': training_args.opacity_lr, "name": "opacity"},
             {'params': [self._scaling], 'lr': training_args.scaling_lr, "name": "scaling"},
             {'params': [self._rotation], 'lr': training_args.rotation_lr, "name": "rotation"},
-            {'params': [self._coefs], 'lr': training_args.deformation_lr_init * self.spatial_lr_scale, "name": "coefs"}
+            # {'params': [self._coefs], 'lr': training_args.deformation_lr_init * self.spatial_lr_scale, "name": "coefs"}
         ]
 
         self.optimizer = torch.optim.Adam(l, lr=0.0, eps=1e-15)
@@ -230,8 +304,8 @@ class ToolModel:
             l.append('scale_{}'.format(i))
         for i in range(self._rotation.shape[1]):
             l.append('rot_{}'.format(i))
-        for i in range(self._coefs.shape[1]):
-            l.append('coefs_{}'.format(i))
+        # for i in range(self._coefs.shape[1]):
+            # l.append('coefs_{}'.format(i))
         return l
 
 
@@ -309,11 +383,12 @@ class ToolModel:
         scale = self._scaling.detach().cpu().numpy()
         rotation = self._rotation.detach().cpu().numpy()
         # FDM added
-        coefs = self._coefs.detach().cpu().numpy()
+        # coefs = self._coefs.detach().cpu().numpy()
         dtype_full = [(attribute, 'f4') for attribute in self.construct_list_of_attributes()]
         elements = np.empty(xyz.shape[0], dtype=dtype_full)
         attributes = np.concatenate((xyz, normals, f_dc, f_rest, opacities, scale, rotation, \
-                                     coefs), axis=1) # FDM added
+                                    #  coefs
+                                     ), axis=1) # FDM added
         elements[:] = list(map(tuple, attributes))
         if not only_make:
             el = PlyElement.describe(elements, 'vertex')
@@ -394,23 +469,25 @@ class ToolModel:
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
         # FDM added
-        self._coefs = optimizable_tensors["coefs"]
-        self._deformation_accum = self._deformation_accum[valid_points_mask]
-        self._deformation_table = self._deformation_table[valid_points_mask]
+        # self._coefs = optimizable_tensors["coefs"]
+        # self._deformation_accum = self._deformation_accum[valid_points_mask]
+        # self._deformation_table = self._deformation_table[valid_points_mask]
 
         self.xyz_gradient_accum = self.xyz_gradient_accum[valid_points_mask]
         self.denom = self.denom[valid_points_mask]
         self.max_radii2D = self.max_radii2D[valid_points_mask]
 
     # FDM added/change: detailed control input
-    def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, new_coefs, new_deformation_table):
+    def densification_postfix(self, new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation, 
+                            #   new_coefs, new_deformation_table,
+                              ):
         d = {"xyz": new_xyz,
         "f_dc": new_features_dc,
         "f_rest": new_features_rest,
         "opacity": new_opacities,
         "scaling" : new_scaling,
         "rotation" : new_rotation,
-        "coefs": new_coefs
+        # "coefs": new_coefs
        }
 
         optimizable_tensors = self.cat_tensors_to_optimizer(d)
@@ -421,9 +498,9 @@ class ToolModel:
         self._scaling = optimizable_tensors["scaling"]
         self._rotation = optimizable_tensors["rotation"]
         # FDM added
-        self._coefs = optimizable_tensors["coefs"]
-        self._deformation_table = torch.cat([self._deformation_table,new_deformation_table],-1)
-        self._deformation_accum = torch.zeros((self.get_xyz.shape[0], 3), device="cuda")
+        # self._coefs = optimizable_tensors["coefs"]
+        # self._deformation_table = torch.cat([self._deformation_table,new_deformation_table],-1)
+        # self._deformation_accum = torch.zeros((self.get_xyz.shape[0], 3), device="cuda")
 
         self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
         self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
@@ -451,10 +528,12 @@ class ToolModel:
         new_features_rest = self._features_rest[selected_pts_mask].repeat(N,1,1)
         new_opacity = self._opacity[selected_pts_mask].repeat(N,1)
         # FDM added
-        new_coefs = self._coefs[selected_pts_mask].repeat(N,1)
-        new_deformation_table = self._deformation_table[selected_pts_mask].repeat(N)
+        # new_coefs = self._coefs[selected_pts_mask].repeat(N,1)
+        # new_deformation_table = self._deformation_table[selected_pts_mask].repeat(N)
         
-        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation, new_coefs,new_deformation_table)
+        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacity, new_scaling, new_rotation
+                                #    , new_coefs,new_deformation_table,
+                                   )
 
         prune_filter = torch.cat((selected_pts_mask, torch.zeros(N * selected_pts_mask.sum(), device="cuda", dtype=bool)))
         self.prune_points(prune_filter)
@@ -472,10 +551,12 @@ class ToolModel:
         new_scaling = self._scaling[selected_pts_mask]
         new_rotation = self._rotation[selected_pts_mask]
         # FDM added
-        new_coefs    = self._coefs[selected_pts_mask]
-        new_deformation_table = self._deformation_table[selected_pts_mask]
+        # new_coefs    = self._coefs[selected_pts_mask]
+        # new_deformation_table = self._deformation_table[selected_pts_mask]
 
-        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation,new_coefs, new_deformation_table)
+        self.densification_postfix(new_xyz, new_features_dc, new_features_rest, new_opacities, new_scaling, new_rotation
+                                #    ,new_coefs, new_deformation_table,
+                                   )
 
 
     def densify(self, max_grad, min_opacity, extent, max_screen_size):
@@ -536,25 +617,25 @@ class ToolModel:
         # print("origin deformation point nums:",self._deformation_table.sum())
         self._deformation_table = torch.gt(self._deformation_accum.max(dim=-1).values/100,threshold)
         
-    # FDM added
-    def gaussian_deformation(self, t, ch_num = 10, basis_num = 17):
-        """
-        Applies linear combination of learnable Gaussian basis functions to model the surface deformation.
+    # # FDM added
+    # def gaussian_deformation(self, t, ch_num = 10, basis_num = 17):
+    #     """
+    #     Applies linear combination of learnable Gaussian basis functions to model the surface deformation.
 
-        Args:
-            t (torch.Tensor): The input tensor.
-            ch_num (int): The number of channels in the deformation tensor. In this work, 10 = 3 (pos) + 3 (scale) + 4 (rot).
-            basis_num (int): The number of Gaussian basis functions.
+    #     Args:
+    #         t (torch.Tensor): The input tensor.
+    #         ch_num (int): The number of channels in the deformation tensor. In this work, 10 = 3 (pos) + 3 (scale) + 4 (rot).
+    #         basis_num (int): The number of Gaussian basis functions.
 
-        Returns:
-            torch.Tensor: The deformed model tensor.
-        """
-        N = len(self._xyz)
-        coefs = self._coefs.reshape(N, ch_num, 3 , basis_num).contiguous() 
-        weight, mu, sigma = torch.chunk(coefs,3,-2)                       
-        exponent = (t - mu)**2/(sigma**2+1e-4)
-        gaussian =  torch.exp(-exponent**2)         
-        return (gaussian*weight).sum(-1).squeeze()
+    #     Returns:
+    #         torch.Tensor: The deformed model tensor.
+    #     """
+    #     N = len(self._xyz)
+    #     coefs = self._coefs.reshape(N, ch_num, 3 , basis_num).contiguous() 
+    #     weight, mu, sigma = torch.chunk(coefs,3,-2)                       
+    #     exponent = (t - mu)**2/(sigma**2+1e-4)
+    #     gaussian =  torch.exp(-exponent**2)         
+    #     return (gaussian*weight).sum(-1).squeeze()
     
     # FDM added
     # def deformation(self, xyz: torch.Tensor, scales: torch.Tensor, rotations: torch.Tensor, time: float) -> Tuple[torch.Tensor, torch.Tensor, torch.Tensor]:
@@ -589,17 +670,17 @@ class ToolModel:
             return xyz, scales, rotations
     
 
-    # FDM added
-    def print_deformation_weight_grad(self):
-        for name, weight in self._deformation.named_parameters():
-            if weight.requires_grad:
-                if weight.grad is None:
+    # # FDM added
+    # def print_deformation_weight_grad(self):
+    #     for name, weight in self._deformation.named_parameters():
+    #         if weight.requires_grad:
+    #             if weight.grad is None:
                     
-                    print(name," :",weight.grad)
-                else:
-                    if weight.grad.mean() != 0:
-                        print(name," :",weight.grad.mean(), weight.grad.min(), weight.grad.max())
-        print("-"*50)
+    #                 print(name," :",weight.grad)
+    #             else:
+    #                 if weight.grad.mean() != 0:
+    #                     print(name," :",weight.grad.mean(), weight.grad.min(), weight.grad.max())
+    #     print("-"*50)
     
     # # FDM added
     # def compute_sparsity_regulation(self,):

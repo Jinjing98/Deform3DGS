@@ -1,5 +1,6 @@
 from scene.flexible_deform_model import TissueGaussianModel 
-from scene.tool_movement_model import GaussianModelActor
+# from scene.tool_movement_model import GaussianModelActor
+from scene.tool_model import ToolModel
 # from scene.actor_pose import ActorPose
 import torch.nn as nn
 import torch
@@ -36,6 +37,7 @@ class MisGaussianModel(nn.Module):
 
         self.include_tissue =self.cfg.model.nsg.include_tissue #get('include_tissue', True)
         self.include_obj =self.cfg.model.nsg.include_obj#get('include_obj', False) #False)
+        self.include_obj_pose =self.cfg.model.nsg.include_obj_pose#get('include_obj', False) #False)
         self.include_background =self.cfg.model.nsg.include_bkgd#get('include_bkgd', False)
         self.include_sky =self.cfg.model.nsg.include_sky#get('include_sky', False) 
 
@@ -69,7 +71,6 @@ class MisGaussianModel(nn.Module):
             self.candidate_model_names['tissue_model'] = [
                                                         'tissue',
                                                         # 'tissue_2',
-                                                        # 'tissue_2nd',
                                                         ]
             
             assert torch.Tensor([ name.startswith('tissue') for name in self.candidate_model_names['tissue_model']]).all(),\
@@ -93,6 +94,7 @@ class MisGaussianModel(nn.Module):
         
         self.model_name_id = bidict()
         self.obj_list = []
+        self.obj_pose_list = []
         self.models_num = 0
         self.obj_info = obj_info
         # Build background model
@@ -121,6 +123,7 @@ class MisGaussianModel(nn.Module):
                 self.models_num += 1
         
         # Build object model
+        self.actor_pose = None
         if self.include_obj:
             model_names = self.candidate_model_names['obj_model_cand']
             for model_name in model_names:
@@ -135,47 +138,18 @@ class MisGaussianModel(nn.Module):
                 self.model_name_id[model_name] = self.models_num
                 self.models_num += 1
                 self.obj_list.append(model_name)
-            # Build actor model 
-            from scene.tool_pose import ToolPose
-
-            # def __init__(self, 
-            #             frames_num,
-            #             objs_num = 1,
-            #             timestamps = None, 
-            #             #  obj_info, 
-            #             cfg_optim = None,
-            #             opt_track = True):
-            # self.actor_pose = ToolPose(frames_num=,
-            #                            objs_num=1,
-            #                            timestamps=camera_timestamps,
-            #                            cfg_optim=self.cfg.optim,
-            #                            opt_track=self.cfg.model.nsg.opt_track)
-
-
-            # def find_closest_camera_timestamps(self, track_id, camera: Camera):
-            #     timestamp = camera.meta['timestamp']
-            #     cam = camera.meta['cam']
-            #     camera_timestamps = self.camera_timestamps[cam]['train_timestamps']
-            #     start_timestamp = self.obj_info[track_id]['start_timestamp']
-            #     end_timestamp = self.obj_info[track_id]['end_timestamp']
-            #     camera_timestamps = np.array([x for x in camera_timestamps if x >= start_timestamp and x <= end_timestamp])
-            #     if len(camera_timestamps) < 2:
-            #         return None, None
-            #     else:
-            #         delta_timestamps = np.abs(camera_timestamps - timestamp)
-            #         idx1, idx2 = np.argsort(delta_timestamps)[:2]            
-            #         return camera_timestamps[idx1], camera_timestamps[idx2]
+                # Build actor model 
+                from scene.tool_pose import ToolPose
+                if self.include_obj_pose:
+                    assert 0, self.actor_pose
+                    self.actor_pose = ToolPose(obj_tracklets, 
+                                                tracklet_timestamps, 
+                                                camera_timestamps, 
+                                                obj_info,
+                                                opt_track = self.cfg.model.nsg.opt_track)
+                    self.obj_list.append(self.actor_pose)
                     
-
-
-
-            self.actor_pose = ActorPose(obj_tracklets, 
-                                        tracklet_timestamps, 
-                                        camera_timestamps, 
-                                        obj_info,
-                                        opt_track = self.cfg.model.nsg.opt_track)
-        else:
-            self.actor_pose = None
+                
 
 
 
@@ -235,8 +209,8 @@ class MisGaussianModel(nn.Module):
                 model.create_from_pcd(pcd = pcd, spatial_lr_scale = spatial_lr_scale, 
                                       time_line = time_line)
             elif model_name.startswith('obj_'):
-                model: GaussianModelActor = getattr(self, model_name)
-                print('todo')
+                # model: GaussianModelActor = getattr(self, model_name)
+                model: ToolModel = getattr(self, model_name)
                 model.create_from_pcd(pcd = pcd, spatial_lr_scale = spatial_lr_scale, 
                                       time_line = time_line)
             else:
@@ -258,10 +232,16 @@ class MisGaussianModel(nn.Module):
                 plydata = model.make_ply()
                 plydata = PlyElement.describe(plydata, f'vertex_{model_name}')
             except:
-                assert isinstance(model,TissueGaussianModel)
+                assert isinstance(model,TissueGaussianModel) or isinstance(model,ToolModel)
                 plydata = model.save_ply(path = path,
                                          only_make = True)
                 plydata = PlyElement.describe(plydata, f'vertex_{model_name}')
+                
+                # save ply model_wise for debug
+                model.save_ply(path = path.replace('.ply',f'_{model_name}.ply'), only_make = False)
+
+
+
             plydata_list.append(plydata)
         PlyData(plydata_list).write(path)
         
@@ -337,60 +317,60 @@ class MisGaussianModel(nn.Module):
                 if model_name.startswith('obj_'):
                     assert self.include_obj
                     timestamp = camera.meta['timestamp']
-                    start_timestamp, end_timestamp = model.start_timestamp, model.end_timestamp
-                    if timestamp >= start_timestamp and timestamp <= end_timestamp and self.get_visibility(obj_name):
-                        self.num_gaussians += model.get_xyz.shape[0]
-                        self.graph_obj_list.append(model_name)
-                    else:
-                        assert 0,f'the timestamp is not included?'
+                    # assert 0,timestamp
+                    # start_timestamp, end_timestamp = model.start_timestamp, model.end_timestamp
+                    # if timestamp >= start_timestamp and timestamp <= end_timestamp and self.get_visibility(obj_name):
+                    print('todo check the timestamp within the start and end')
+                    self.num_gaussians += model.get_xyz.shape[0]
+                    self.graph_obj_list.append(model_name)
                 else:
                     self.num_gaussians += model.get_xyz.shape[0]
         # set index range
         self.graph_gaussian_range = dict()
         idx = 0
         #/////////////////////
-        for model_name in self.model_name_id.keys():
-            if self.get_visibility(model_name=model_name):
-                if model_name.startswith('obj_') and model_name not in self.graph_obj_list:
-                    continue
-                num_gaussians = getattr(self, model_name).get_xyz.shape[0]
-                self.num_gaussians += num_gaussians
+        # for model_name in self.model_name_id.keys():
+        #     if self.get_visibility(model_name=model_name):
+        #         if model_name.startswith('obj_') and model_name not in self.graph_obj_list:
+        #             continue
+        #         num_gaussians = getattr(self, model_name).get_xyz.shape[0]
+        #         self.num_gaussians += num_gaussians
         #////////////////////////
-        if len(self.graph_obj_list) > 0:
-            assert 0
-            self.obj_rots = []
-            self.obj_trans = []
-            for i, obj_name in enumerate(self.graph_obj_list):
-                obj_model: GaussianModelActor = getattr(self, obj_name)
-                track_id = obj_model.track_id
-                obj_rot = self.actor_pose.get_tracking_rotation(track_id, self.viewpoint_camera)
-                # it will use the trans info of the next two frames
-                obj_trans = self.actor_pose.get_tracking_translation(track_id, self.viewpoint_camera)  
-                # internally call:  get_tracking_translation_(self, track_id, timestamp)
-                # which learn the drift only--- 
-                ego_pose = self.viewpoint_camera.ego_pose
-                ego_pose_rot = matrix_to_quaternion(ego_pose[:3, :3].unsqueeze(0)).squeeze(0)
-                obj_rot = quaternion_raw_multiply(ego_pose_rot.unsqueeze(0), obj_rot.unsqueeze(0)).squeeze(0)
-                obj_trans = ego_pose[:3, :3] @ obj_trans + ego_pose[:3, 3]
+        # if len(self.graph_obj_list) > 0:
+        #     assert 0
+        #     self.obj_rots = []
+        #     self.obj_trans = []
+        #     for i, obj_name in enumerate(self.graph_obj_list):
+        #         obj_model: GaussianModelActor = getattr(self, obj_name)
+        #         track_id = obj_model.track_id
+        #         obj_rot = self.actor_pose.get_tracking_rotation(track_id, self.viewpoint_camera)
+        #         # it will use the trans info of the next two frames
+        #         obj_trans = self.actor_pose.get_tracking_translation(track_id, self.viewpoint_camera)  
+        #         # internally call:  get_tracking_translation_(self, track_id, timestamp)
+        #         # which learn the drift only--- 
+        #         ego_pose = self.viewpoint_camera.ego_pose
+        #         ego_pose_rot = matrix_to_quaternion(ego_pose[:3, :3].unsqueeze(0)).squeeze(0)
+        #         obj_rot = quaternion_raw_multiply(ego_pose_rot.unsqueeze(0), obj_rot.unsqueeze(0)).squeeze(0)
+        #         obj_trans = ego_pose[:3, :3] @ obj_trans + ego_pose[:3, 3]
                 
-                obj_rot = obj_rot.expand(obj_model.get_xyz.shape[0], -1)
-                obj_trans = obj_trans.unsqueeze(0).expand(obj_model.get_xyz.shape[0], -1)
+        #         obj_rot = obj_rot.expand(obj_model.get_xyz.shape[0], -1)
+        #         obj_trans = obj_trans.unsqueeze(0).expand(obj_model.get_xyz.shape[0], -1)
                 
-                self.obj_rots.append(obj_rot)
-                self.obj_trans.append(obj_trans)
+        #         self.obj_rots.append(obj_rot)
+        #         self.obj_trans.append(obj_trans)
             
-            self.obj_rots = torch.cat(self.obj_rots, dim=0)
-            self.obj_trans = torch.cat(self.obj_trans, dim=0)  
+        #     self.obj_rots = torch.cat(self.obj_rots, dim=0)
+        #     self.obj_trans = torch.cat(self.obj_trans, dim=0)  
             
-            self.flip_mask = []
-            for obj_name in self.graph_obj_list:
-                obj_model: GaussianModelActor = getattr(self, obj_name)
-                if obj_model.deformable or self.flip_prob == 0:
-                    flip_mask = torch.zeros_like(obj_model.get_xyz[:, 0]).bool()
-                else:
-                    flip_mask = torch.rand_like(obj_model.get_xyz[:, 0]) < self.flip_prob
-                self.flip_mask.append(flip_mask)
-            self.flip_mask = torch.cat(self.flip_mask, dim=0)   
+        #     self.flip_mask = []
+        #     for obj_name in self.graph_obj_list:
+        #         obj_model: GaussianModelActor = getattr(self, obj_name)
+        #         if obj_model.deformable or self.flip_prob == 0:
+        #             flip_mask = torch.zeros_like(obj_model.get_xyz[:, 0]).bool()
+        #         else:
+        #             flip_mask = torch.rand_like(obj_model.get_xyz[:, 0]) < self.flip_prob
+        #         self.flip_mask.append(flip_mask)
+        #     self.flip_mask = torch.cat(self.flip_mask, dim=0)   
             
     @property
     def get_scaling(self):
@@ -563,16 +543,18 @@ class MisGaussianModel(nn.Module):
         for model_name in self.model_name_id.keys():
             if startswith_any(model_name, exclude_list):
                 continue
-            model: Union[GaussianModelBase,TissueGaussianModel] = getattr(self, model_name)
+            model: Union[GaussianModelBase,TissueGaussianModel,ToolModel] = getattr(self, model_name)
             if model_name.startswith('tissue'):
+                model.training_setup(training_args=self.cfg.optim)
+            elif model_name.startswith('obj_'):
                 model.training_setup(training_args=self.cfg.optim)
             else:
                 assert 0,NotImplementedError
                 model.training_setup()
                 
-        if self.actor_pose is not None:
-            assert 0
-            self.actor_pose.training_setup()
+        # if self.actor_pose is not None:
+        #     assert 0
+        #     self.actor_pose.training_setup()
         if self.sky_cubemap is not None:
             assert 0
             self.sky_cubemap.training_setup()
