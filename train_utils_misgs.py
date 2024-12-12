@@ -488,8 +488,15 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 torch.save(state_dict, ckpt_path)
 
 from render_misgs import MisGaussianRenderer
-def training_report_misgs(tb_writer, iteration, scalar_stats, tensor_stats, testing_iterations, scene: Scene, 
-                             renderer: MisGaussianRenderer):
+def training_report_misgs(tb_writer, 
+                          iteration, 
+                          scalar_stats, 
+                          tensor_stats, 
+                          testing_iterations, 
+                          scene: Scene,
+                          renderer: MisGaussianRenderer,
+                          cfg = None,
+                          ):
     if tb_writer:
         try:
             for key, value in scalar_stats.items():
