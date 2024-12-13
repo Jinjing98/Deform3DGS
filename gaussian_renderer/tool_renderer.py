@@ -12,13 +12,12 @@
 import torch
 import math
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
-from scene.flexible_deform_model import TissueGaussianModel
+from scene.tool_model import ToolModel
 from utils.sh_utils import eval_sh
 
 
-
-
-def render_flow(viewpoint_camera, pc : TissueGaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):
+ 
+def tool_render(viewpoint_camera, pc : ToolModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):
     """
     Render the scene. 
     
@@ -84,30 +83,40 @@ def render_flow(viewpoint_camera, pc : TissueGaussianModel, pipe, bg_color : tor
     else:
         scales = pc._scaling
         rotations = pc._rotation
-    deformation_point = pc._deformation_table
-    
-
-    means3D_deform, scales_deform, rotations_deform = pc.deformation(means3D[deformation_point], scales[deformation_point], 
-                                                                         rotations[deformation_point],
-                                                                         ori_time)
-    opacity_deform = opacity[deformation_point]
+    # deformation_point = pc._deformation_table
+    # means3D_deform, scales_deform, rotations_deform = pc.deformation(means3D[deformation_point], scales[deformation_point], 
+                                                                        #  rotations[deformation_point],
+                                                                        #  ori_time)
+    # opacity_deform = opacity[deformation_point]
         
     # print(time.max())
-    with torch.no_grad():
-        pc._deformation_accum[deformation_point] += torch.abs(means3D_deform - means3D[deformation_point])
+    # with torch.no_grad():
+        # pc._deformation_accum[deformation_point] += torch.abs(means3D_deform - means3D[deformation_point])
 
-    means3D_final = torch.zeros_like(means3D)
-    rotations_final = torch.zeros_like(rotations)
-    scales_final = torch.zeros_like(scales)
-    opacity_final = torch.zeros_like(opacity)
-    means3D_final[deformation_point] =  means3D_deform
-    rotations_final[deformation_point] =  rotations_deform
-    scales_final[deformation_point] =  scales_deform
-    opacity_final[deformation_point] = opacity_deform
-    means3D_final[~deformation_point] = means3D[~deformation_point]
-    rotations_final[~deformation_point] = rotations[~deformation_point]
-    scales_final[~deformation_point] = scales[~deformation_point]
-    opacity_final[~deformation_point] = opacity[~deformation_point]
+    # means3D_final = torch.zeros_like(means3D)
+    # rotations_final = torch.zeros_like(rotations)
+    # scales_final = torch.zeros_like(scales)
+    # opacity_final = torch.zeros_like(opacity)
+    # means3D_final[deformation_point] =  means3D_deform
+    # rotations_final[deformation_point] =  rotations_deform
+    # scales_final[deformation_point] =  scales_deform
+    # opacity_final[deformation_point] = opacity_deform
+    # means3D_final[~deformation_point] = means3D[~deformation_point]
+    # rotations_final[~deformation_point] = rotations[~deformation_point]
+    # scales_final[~deformation_point] = scales[~deformation_point]
+    # opacity_final[~deformation_point] = opacity[~deformation_point]
+
+
+    means3D_final = means3D
+    rotations_final = rotations
+    scales_final = scales
+    opacity_final = opacity
+
+
+
+
+
+
 
     scales_final = pc.scaling_activation(scales_final)
     rotations_final = pc.rotation_activation(rotations_final)
@@ -139,19 +148,17 @@ def render_flow(viewpoint_camera, pc : TissueGaussianModel, pipe, bg_color : tor
         # means2D_densify=screenspace_points_densify,
         shs = shs,
         colors_precomp = colors_precomp,
+        # opacities = opacity,
         opacities = opacity_final,
         scales = scales_final,
         rotations = rotations_final,
         cov3D_precomp = cov3D_precomp)
-    # rendered_image_vis = rendered_image.detach().to('cpu')
+    # rendered_image_vis_tool = rendered_image.detach().to('cpu')
     
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
-
     return {"render": rendered_image,
             "depth": depth,
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii > 0,
             "radii": radii,}
-
-
