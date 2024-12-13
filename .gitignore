@@ -21,6 +21,7 @@ submodules/depth-diff-gaussian-rasterization/*.txt
 assets/
 *.TTF
 
+__pycache__/
 reconstruct/
 
 notebooks/*.ipynb

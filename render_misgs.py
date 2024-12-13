@@ -152,13 +152,13 @@ class MisGaussianRenderer():
         result = self.render_kernel(viewpoint_camera, pc, convert_SHs_python, compute_cov3D_python, scaling_modifier, override_color)
 
         # Step2: render sky
-        if pc.include_sky:
-            sky_color = pc.sky_cubemap(viewpoint_camera, result['acc'].detach())
+        # if pc.include_sky:
+        #     sky_color = pc.sky_cubemap(viewpoint_camera, result['acc'].detach())
 
-            result['rgb'] = result['rgb'] + sky_color * (1 - result['acc'])
+        #     result['rgb'] = result['rgb'] + sky_color * (1 - result['acc'])
 
-        if pc.use_color_correction:
-            result['rgb'] = pc.color_correction(viewpoint_camera, result['rgb'])
+        # if pc.use_color_correction:
+        #     result['rgb'] = pc.color_correction(viewpoint_camera, result['rgb'])
 
         if self.cfg.mode != 'train':
             result['rgb'] = torch.clamp(result['rgb'], 0., 1.)
