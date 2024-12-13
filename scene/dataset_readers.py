@@ -107,6 +107,7 @@ class SceneInfo(NamedTuple):
     #stree gs
     scene_metadata: dict = dict()
     cam_metadata: dict = dict()
+    point_cloud_dict: dict = dict()
 
 def getNerfppNorm(cam_info):
     def get_center_and_diag(cam_centers):
@@ -220,6 +221,7 @@ def generateCamerasFromTransforms(path, template_transformsfile, extension, maxt
 def readEndoNeRFInfo(datadir,tool_mask = 'use',init_mode = None,
                      load_other_obj_meta = False,
                      cfg = None,
+                     load_pcd_dict_in_sceneinfo = False
                      ):
     assert init_mode in ['MAPF','skipMAPF','rand']
     from scene.endo_loader import EndoNeRF_Dataset
@@ -256,30 +258,46 @@ def readEndoNeRFInfo(datadir,tool_mask = 'use',init_mode = None,
         scene_metadata['sphere_center'] = sphere_normalization['translate']
         scene_metadata['sphere_radius'] = sphere_normalization['radius']
 
+    pcd = None
+    pcd_dict = {}
+    if not load_pcd_dict_in_sceneinfo:
+        # Initialize pcd computation:
+        print('take care! it keeps changing for each runs if use local ones!...')
+        # points init
+        xyz, rgb, normals = endo_dataset.get_sparse_pts(init_mode=init_mode)
+
+        normals = np.random.random((xyz.shape[0], 3))
+        pcd = BasicPointCloud(points=xyz, colors=rgb, normals=normals)
+        ply_path = os.path.join(datadir, "points3d.ply")
+        # storePly(ply_path, xyz,rgb*255)  # the points3d.ply is not used at all, try not touch the src dataset
+        plydata = storePly(ply_path, xyz,rgb*255, wo_write=True)  # the points3d.ply is not used at all, try not touch the src dataset
+        print('the points3d.ply is not used at all, try not touch the src dataset')
+        try:
+            # pcd = fetchPly(ply_path)
+            pcd = fetchPly(path = None, plydata = plydata)
+        except:
+            pcd = None
+    else:
+        xyz_dict, rgb_dict, normals_dict = endo_dataset.get_sparse_pts_dict_misgs(init_mode=init_mode)
+        
+        for piece_name in xyz_dict.keys():
+            xyz = xyz_dict[piece_name]
+            rgb = rgb_dict[piece_name]
+            normals = normals_dict[piece_name]
+            
+            normals = np.random.random((xyz.shape[0], 3))
+            pcd_i = BasicPointCloud(points=xyz, colors=rgb, normals=normals)
+            ply_path = os.path.join(datadir, "points3d.ply")
+            plydata = storePly(ply_path, xyz,rgb*255, wo_write=True)  # the points3d.ply is not used at all, try not touch the src dataset
+            try:
+                pcd_i = fetchPly(path = None, plydata = plydata)
+            except:
+                pcd_i = None
+            pcd_dict[piece_name] = pcd_i
 
 
-    # Initialize pcd computation:
-    # sparse point clouds
-    # the pcd is used for gaussians init
-    print('The init points for training did not consider mask?...')
-    print('take care! it keeps changing for each runs!...')
-    ply_path = os.path.join(datadir, "points3d.ply")
-    # points init
-    xyz, rgb, normals = endo_dataset.get_sparse_pts(init_mode=init_mode)
-    print('do we need to perform tool_mask here as well?')
-    normals = np.random.random((xyz.shape[0], 3))
-    pcd = BasicPointCloud(points=xyz, colors=rgb, normals=normals)
-    # storePly(ply_path, xyz,rgb*255)  # the points3d.ply is not used at all, try not touch the src dataset
-    plydata = storePly(ply_path, xyz,rgb*255, wo_write=True)  # the points3d.ply is not used at all, try not touch the src dataset
-    print('the points3d.ply is not used at all, try not touch the src dataset')
-    try:
-        # pcd = fetchPly(ply_path)
-        pcd = fetchPly(path = None, plydata = plydata)
-    except:
-        pcd = None
 
-
-
+    
 
     # get the maximum time
     # Load_sceneInfo with init_pcd/cam/scene/everthing
@@ -294,6 +312,7 @@ def readEndoNeRFInfo(datadir,tool_mask = 'use',init_mode = None,
                            #jj
                            scene_metadata=scene_metadata,
                            cam_metadata=cam_metadata,
+                           point_cloud_dict = pcd_dict,
                            )
 
     return scene_info
