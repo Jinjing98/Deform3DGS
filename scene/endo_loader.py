@@ -311,6 +311,82 @@ class EndoNeRF_Dataset(object):
         return refined_rgb, refined_depth
 
     
+    def get_sparse_pts_dict_misgs(self, sample=True, init_mode = None):
+        assert init_mode in ['MAPF','skipMAPF','rand']
+        R, T = self.image_poses[0]
+        depth = np.array(Image.open(self.depth_paths[0]))
+        depth_mask = np.ones(depth.shape).astype(np.float32)
+        close_depth = np.percentile(depth[depth!=0], 0.1)
+        inf_depth = np.percentile(depth[depth!=0], 99.9)
+        depth_mask[depth>inf_depth] = 0
+        depth_mask[np.bitwise_and(depth<close_depth, depth!=0)] = 0
+        depth_mask[depth==0] = 0
+        depth[depth_mask==0] = 0
+
+        #use mask in init too
+        mask = Image.open(self.masks_paths[0])
+        #mask refer to tool are valued
+        if self.dataset in ['StereoMIS']:
+            mask = 255-np.array(mask) 
+        elif self.dataset in ['EndoNeRF']:
+            mask = np.array(mask)  
+        else:
+            assert 0, NotImplementedError
+        if self.tool_mask == 'use':
+            mask = 1 - np.array(mask) / 255.0
+        elif self.tool_mask == 'inverse':
+            mask = np.array(mask) / 255.0
+        elif self.tool_mask == 'nouse':
+            mask = np.ones_like(mask)
+        else:
+            assert 0
+        assert len(mask.shape)==2
+
+        masks_dict = {'tissue':mask,
+                      'obj_tool1':1-mask}
+        pts_dict = {}
+        colors_dict = {}
+        normals_dict = {}
+        for piece_name,piece_mask in masks_dict.items():
+            mask = np.logical_and(depth_mask, piece_mask)   
+            color = np.array(Image.open(self.image_paths[0]))/255.0
+            pts, colors, _ = self.get_pts_cam(depth, mask, color, disable_mask=False)
+            c2w = self.get_camera_poses((R, T))
+            pts = self.transform_cam2cam(pts, c2w)
+            
+            if init_mode=='skipMAPF':
+                print('alright consider mask')
+                pass
+            elif init_mode == 'MAPF':
+                print('alright consider mask')
+                pts, colors = self.search_pts_colors_with_motion(pts, colors, mask, c2w)#MAPF
+            elif init_mode == 'rand':
+                #/////////////////////////////////////////
+                rand_num_pts = 100_000
+                warnings.warn(f"tissue rand init(w.o concerning mask): generating random point cloud ({rand_num_pts})... w.o mask constrains?")
+                # use the params from deformable-3d-gs synthetic Blender scenes
+                pts = np.random.random((rand_num_pts, 3)) * 2.6 - 1.3
+                shs = np.random.random((rand_num_pts, 3)) / 255.0
+                colors=SH2RGB(shs)
+                #//////////////////////
+            else:
+                assert 0, NotImplementedError
+            normals = np.zeros((pts.shape[0], 3))
+
+            if sample:
+                num_sample = int(0.1 * pts.shape[0])
+                sel_idxs = np.random.choice(pts.shape[0], num_sample, replace=False)
+                pts = pts[sel_idxs, :]
+                colors = colors[sel_idxs, :]
+                normals = normals[sel_idxs, :]
+
+            pts_dict[piece_name] = pts
+            colors_dict[piece_name] = colors
+            normals_dict[piece_name] = normals
+        # return pts, colors, normals
+        return pts_dict,colors_dict,normals_dict
+
+
     def get_sparse_pts(self, sample=True, init_mode = None):
         assert init_mode in ['MAPF','skipMAPF','rand']
         R, T = self.image_poses[0]
