@@ -18,7 +18,6 @@ from random import randint
 import sys
 from scene import  Scene
 from scene.flexible_deform_model import TissueGaussianModel
-# from scene.tool_movement_model import GaussianModelActor
 from scene.mis_gaussian_model import MisGaussianModel
 from utils.general_utils import safe_state
 from tqdm import tqdm
@@ -117,8 +116,8 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
     from config.argsgroup2cn import save_cfg
     save_cfg(cfg, cfg.model_path, epoch=start_iter)
 
-    from render_misgs import MisGaussianRenderer
-    gaussians_renderer = MisGaussianRenderer(cfg=cfg)
+    # from render_misgs import MisGaussianRenderer
+    # gaussians_renderer = MisGaussianRenderer(cfg=cfg)
     from gaussian_renderer import render_flow as fdm_render
     from gaussian_renderer.tool_renderer import tool_render
     # from gaussian_renderer import render_flow as render
@@ -221,7 +220,8 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
                 + optim_args.lambda_dssim * (1.0 - ssim(image_tool.to(torch.double), gt_image.to(torch.double), \
                                                         mask=tool_mask))
-            loss += tool_loss
+            # loss += tool_loss
+            loss = 0*loss+tool_loss
 
 
 

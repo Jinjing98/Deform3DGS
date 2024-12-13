@@ -153,7 +153,7 @@ def tool_render(viewpoint_camera, pc : ToolModel, pipe, bg_color : torch.Tensor,
         scales = scales_final,
         rotations = rotations_final,
         cov3D_precomp = cov3D_precomp)
-    # rendered_image_vis_tool = rendered_image.detach().to('cpu')
+    rendered_image_vis_tool = rendered_image.detach().to('cpu')
     
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.

@@ -29,7 +29,13 @@ class ToolModel:
 
     def __init__(self, 
                 #  sh_degree : int, 
-                 model_args):
+                 model_args,
+                 track_id = None,
+                 obj_meta = None
+                 ):
+        
+        self.track_id = track_id
+
         self.model_args = model_args
         self.active_sh_degree = 0
         self.max_sh_degree = self.model_args.sh_degree#sh_degree  
@@ -153,7 +159,7 @@ class ToolModel:
     @property
     def get_scaling(self):
         return self.scaling_activation(self._scaling)
-    
+        
     @property
     def get_rotation(self):
         return self.rotation_activation(self._rotation)

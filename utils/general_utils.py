@@ -93,7 +93,7 @@ def PILtoTorch(pil_image, resolution):
         return resized_image.unsqueeze(dim=-1).permute(2, 0, 1)
 
 def get_expon_lr_func(
-    lr_init, lr_final, lr_delay_steps=0, lr_delay_mult=1.0, max_steps=1000000
+    lr_init, lr_final, lr_delay_steps=0, lr_delay_mult=1.0, max_steps=1000000,warmup_steps = 0
 ):
     """
     Copied from Plenoxels
@@ -111,7 +111,7 @@ def get_expon_lr_func(
     """
 
     def helper(step):
-        if step < 0 or (lr_init == 0.0 and lr_final == 0.0):
+        if step < 0 or (lr_init == 0.0 and lr_final == 0.0) or (step < warmup_steps):
             # Disable this parameter
             return 0.0
         if lr_delay_steps > 0:

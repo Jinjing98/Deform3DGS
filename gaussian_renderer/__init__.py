@@ -80,6 +80,7 @@ def render_flow(viewpoint_camera, pc : TissueGaussianModel, pipe, bg_color : tor
     cov3D_precomp = None
     
     if pipe.compute_cov3D_python:
+        assert 0
         cov3D_precomp = pc.get_covariance(scaling_modifier)
     else:
         scales = pc._scaling
@@ -143,7 +144,7 @@ def render_flow(viewpoint_camera, pc : TissueGaussianModel, pipe, bg_color : tor
         scales = scales_final,
         rotations = rotations_final,
         cov3D_precomp = cov3D_precomp)
-    # rendered_image_vis = rendered_image.detach().to('cpu')
+    rendered_image_vis = rendered_image.detach().to('cpu')
     
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.

@@ -1,7 +1,7 @@
 from scene.flexible_deform_model import TissueGaussianModel 
-# from scene.tool_movement_model import GaussianModelActor
 from scene.tool_model import ToolModel
-# from scene.actor_pose import ActorPose
+from scene.tool_pose import ToolPose
+# from scene.poses_all_objs import ActorPose
 import torch.nn as nn
 import torch
 import os
@@ -25,23 +25,11 @@ class MisGaussianModel(nn.Module):
         self.max_sh_degree =self.cfg.model.gaussian.sh_degree
         self.active_sh_degree = self.max_sh_degree
 
-        # background + moving objects
-        # jj
-        # self.include_tissue =self.cfg.model.nsg.get('include_tissue', True)
-        # self.include_background =self.cfg.model.nsg.get('include_bkgd', False)
-        # self.include_obj =self.cfg.model.nsg.get('include_obj', False) #False)
-        # # sky (modeling sky with gaussians, if set to false represent the sky with cube map)
-        # self.include_sky =self.cfg.model.nsg.get('include_sky', False) 
-
-
-
         self.include_tissue =self.cfg.model.nsg.include_tissue #get('include_tissue', True)
         self.include_obj =self.cfg.model.nsg.include_obj#get('include_obj', False) #False)
         self.include_obj_pose =self.cfg.model.nsg.include_obj_pose#get('include_obj', False) #False)
         self.include_background =self.cfg.model.nsg.include_bkgd#get('include_bkgd', False)
         self.include_sky =self.cfg.model.nsg.include_sky#get('include_sky', False) 
-
-
 
         if self.include_sky:
             assert self.cfg.data.white_background is False
@@ -78,9 +66,6 @@ class MisGaussianModel(nn.Module):
             model_names_obj = [
                 'obj_tool1'
             ]
-
-            # for track_id, _ in self.metadata['obj_meta'].items():
-            #     model_names_obj.extend( f'obj_{track_id:03d}')
             self.candidate_model_names['obj_model_cand']= model_names_obj
         #/////////////////////////////
         self.setup_functions() 
@@ -122,32 +107,32 @@ class MisGaussianModel(nn.Module):
                 self.models_num += 1
         
         # Build object model
-        self.actor_pose = None
+        self.poses_all_objs = None
         if self.include_obj:
             model_names = self.candidate_model_names['obj_model_cand']
-            for model_name in model_names:
+            for i,model_name in enumerate(model_names):
                 # ToolModel
                 from scene.tool_model import ToolModel
-                model = ToolModel(model_args = self.cfg.model.gaussian)
-                # model = GaussianModelActor(model_name=model_name, 
-                #                            obj_meta=self.obj_info[model_name],
-                #                            cfg = self.cfg,
-                #                            )
+                model = ToolModel(model_args = self.cfg.model.gaussian,
+                                  obj_meta=None,
+                                  track_id=i)
                 setattr(self, model_name, model)
                 self.model_name_id[model_name] = self.models_num
                 self.models_num += 1
                 self.obj_list.append(model_name)
-                # Build actor model 
-                from scene.tool_pose import ToolPose
-                if self.include_obj_pose:
-                    assert 0, self.actor_pose
-                    self.actor_pose = ToolPose(obj_tracklets, 
-                                                tracklet_timestamps, 
-                                                camera_timestamps, 
-                                                obj_info,
-                                                opt_track = self.cfg.model.nsg.opt_track)
-                    self.obj_list.append(self.actor_pose)
-                    
+            # Build actor model 
+            from scene.tool_pose import ToolPose
+            if self.include_obj_pose:
+                # camera_timestamps contains train and val
+                # frames_num is complet continous imgs
+                self.poses_all_objs = ToolPose(
+                                                objs_num=1, 
+                                                camera_timestamps=camera_timestamps, 
+                                                cfg_optim=self.cfg.optim,
+                                                opt_track = self.cfg.model.nsg.opt_track,
+                                                cam_id=0)
+                self.obj_list.append(self.poses_all_objs)
+                
     
     def set_visibility(self, include_list):
         self.include_list = include_list # prefix
@@ -178,7 +163,6 @@ class MisGaussianModel(nn.Module):
                                       spatial_lr_scale = spatial_lr_scale, 
                                       time_line = time_line)
             elif model_name.startswith('obj_'):
-                # model: GaussianModelActor = getattr(self, model_name)
                 model: ToolModel = getattr(self, model_name)
                 model.create_from_pcd(pcd = pcd_dict[model_name], 
                                       spatial_lr_scale = spatial_lr_scale, 
@@ -230,8 +214,8 @@ class MisGaussianModel(nn.Module):
             model: GaussianModelBase = getattr(self, model_name)
             model.load_state_dict(state_dict[model_name])
         
-        if self.actor_pose is not None:
-            self.actor_pose.load_state_dict(state_dict['actor_pose'])
+        if self.poses_all_objs is not None:
+            self.poses_all_objs.load_state_dict(state_dict['poses_all_objs'])
         # if self.sky_cubemap is not None:
         #     self.sky_cubemap.load_state_dict(state_dict['sky_cubemap'])
         # if self.color_correction is not None:
@@ -247,8 +231,10 @@ class MisGaussianModel(nn.Module):
             model: Union[GaussianModelBase,TissueGaussianModel] = getattr(self, model_name)
             state_dict[model_name] = model.state_dict(is_final)
         
-        if self.actor_pose is not None:
-            state_dict['actor_pose'] = self.actor_pose.save_state_dict(is_final)
+        # if self.poses_all_objs is not None:
+            # state_dict['poses_all_objs'] = self.poses_all_objs.save_state_dict(is_final)
+
+
         # if self.sky_cubemap is not None:
         #     state_dict['sky_cubemap'] = self.sky_cubemap.save_state_dict(is_final)
         # if self.color_correction is not None:
@@ -307,41 +293,38 @@ class MisGaussianModel(nn.Module):
         #         num_gaussians = getattr(self, model_name).get_xyz.shape[0]
         #         self.num_gaussians += num_gaussians
         #////////////////////////
-        # if len(self.graph_obj_list) > 0:
-        #     assert 0
-        #     self.obj_rots = []
-        #     self.obj_trans = []
-        #     for i, obj_name in enumerate(self.graph_obj_list):
-        #         obj_model: GaussianModelActor = getattr(self, obj_name)
-        #         track_id = obj_model.track_id
-        #         obj_rot = self.actor_pose.get_tracking_rotation(track_id, self.viewpoint_camera)
-        #         # it will use the trans info of the next two frames
-        #         obj_trans = self.actor_pose.get_tracking_translation(track_id, self.viewpoint_camera)  
-        #         # internally call:  get_tracking_translation_(self, track_id, timestamp)
-        #         # which learn the drift only--- 
-        #         ego_pose = self.viewpoint_camera.ego_pose
-        #         ego_pose_rot = matrix_to_quaternion(ego_pose[:3, :3].unsqueeze(0)).squeeze(0)
-        #         obj_rot = quaternion_raw_multiply(ego_pose_rot.unsqueeze(0), obj_rot.unsqueeze(0)).squeeze(0)
-        #         obj_trans = ego_pose[:3, :3] @ obj_trans + ego_pose[:3, 3]
+        if len(self.graph_obj_list) > 0:
+            self.obj_rots = []
+            self.obj_trans = []
+            for i, obj_name in enumerate(self.graph_obj_list):
+                obj_model: ToolModel = getattr(self, obj_name)
+                track_id = obj_model.track_id
+                assert track_id==0
+                obj_rot = self.poses_all_objs.get_tracking_rotation(track_id, self.viewpoint_camera)
+                # it will use the trans info of the next two frames
+                obj_trans = self.poses_all_objs.get_tracking_translation(track_id, self.viewpoint_camera)  
+                # internally call:  get_tracking_translation_(self, track_id, timestamp)
+                # which learn the drift only--- 
+                ego_pose = self.viewpoint_camera.ego_pose
+                ego_pose_rot = matrix_to_quaternion(ego_pose[:3, :3].unsqueeze(0)).squeeze(0)
+                obj_rot = quaternion_raw_multiply(ego_pose_rot.unsqueeze(0), obj_rot.unsqueeze(0)).squeeze(0)
+                obj_trans = ego_pose[:3, :3] @ obj_trans + ego_pose[:3, 3]
                 
-        #         obj_rot = obj_rot.expand(obj_model.get_xyz.shape[0], -1)
-        #         obj_trans = obj_trans.unsqueeze(0).expand(obj_model.get_xyz.shape[0], -1)
+                obj_rot = obj_rot.expand(obj_model.get_xyz.shape[0], -1)
+                obj_trans = obj_trans.unsqueeze(0).expand(obj_model.get_xyz.shape[0], -1)
                 
-        #         self.obj_rots.append(obj_rot)
-        #         self.obj_trans.append(obj_trans)
+                self.obj_rots.append(obj_rot)
+                self.obj_trans.append(obj_trans)
             
-        #     self.obj_rots = torch.cat(self.obj_rots, dim=0)
-        #     self.obj_trans = torch.cat(self.obj_trans, dim=0)  
+            self.obj_rots = torch.cat(self.obj_rots, dim=0)
+            self.obj_trans = torch.cat(self.obj_trans, dim=0)  
             
-        #     self.flip_mask = []
-        #     for obj_name in self.graph_obj_list:
-        #         obj_model: GaussianModelActor = getattr(self, obj_name)
-        #         if obj_model.deformable or self.flip_prob == 0:
-        #             flip_mask = torch.zeros_like(obj_model.get_xyz[:, 0]).bool()
-        #         else:
-        #             flip_mask = torch.rand_like(obj_model.get_xyz[:, 0]) < self.flip_prob
-        #         self.flip_mask.append(flip_mask)
-        #     self.flip_mask = torch.cat(self.flip_mask, dim=0)   
+            self.flip_mask = []
+            for obj_name in self.graph_obj_list:
+                obj_model: ToolModel = getattr(self, obj_name)
+                flip_mask = torch.zeros_like(obj_model.get_xyz[:, 0]).bool()
+                self.flip_mask.append(flip_mask)
+            self.flip_mask = torch.cat(self.flip_mask, dim=0)   
             
     @property
     def get_scaling(self):
@@ -355,51 +338,52 @@ class MisGaussianModel(nn.Module):
             
     @property
     def get_rotation(self):
+        assert 0,'only implement below when use misgs render'
         rotations = []
         for model_name in self.model_name_id.keys():
             if self.get_visibility(model_name=model_name):
                 rotation = getattr(self, model_name).get_rotation
                 rotations.append(rotation)
-        print('todo obj_pose need to be local rotated')
 
-        # # process obj pose
-        # rotations_local = []
-        # for i, obj_name in enumerate(self.graph_obj_list):
-        #     assert self.get_visibility(model_name=obj_name)
-        #     rotations_local.append(getattr(self, obj_name).get_rotation)
-        # if len(self.graph_obj_list) > 0:
-        #     rotations_local = torch.cat(rotations_local, dim=0)
-        #     rotations_local = rotations_local.clone()
-        #     rotations_local[self.flip_mask] = quaternion_raw_multiply(self.flip_matrix, rotations_local[self.flip_mask])
-        #     rotations_obj = quaternion_raw_multiply(self.obj_rots, rotations_local)
-        #     rotations_obj = torch.nn.functional.normalize(rotations_obj)
-        #     rotations.append(rotations_obj)
+        # process obj pose
+        rotations_local = []
+        for i, obj_name in enumerate(self.graph_obj_list):
+            assert self.get_visibility(model_name=obj_name)
+            rotations_local.append(getattr(self, obj_name).get_rotation)
+        if len(self.graph_obj_list) > 0:
+            rotations_local = torch.cat(rotations_local, dim=0)
+            rotations_local = rotations_local.clone()
+            rotations_local[self.flip_mask] = quaternion_raw_multiply(self.flip_matrix, rotations_local[self.flip_mask])
+            rotations_obj = quaternion_raw_multiply(self.obj_rots, rotations_local)
+            rotations_obj = torch.nn.functional.normalize(rotations_obj)
+            rotations.append(rotations_obj)
 
         rotations = torch.cat(rotations, dim=0)
         return rotations
     
     @property
     def get_xyz(self):
+        assert 0,'only implement below when use misgs render'
         # first tissue then obj(tool)
         xyzs = []
         for model_name in self.model_name_id.keys():
             if self.get_visibility(model_name=model_name):
-                xyz = getattr(self, model_name).get_xyz
+                if isinstance(getattr(self, model_name),TissueGaussianModel):
+                    xyz = getattr(self, model_name).get_xyz
                 xyzs.append(xyz)
-        print('todo obj_pose need to be local translated')
 
-        # # process obj pose
-        # xyzs_local = []
-        # for i, obj_name in enumerate(self.graph_obj_list):
-        #     assert self.get_visibility(model_name=obj_name)
-        #     xyzs_local.append(getattr(self, obj_name).get_xyz)
-        # if len(self.graph_obj_list) > 0:
-        #     xyzs_local = torch.cat(xyzs_local, dim=0)
-        #     xyzs_local = xyzs_local.clone()
-        #     xyzs_local[self.flip_mask, self.flip_axis] *= -1
-        #     obj_rots = quaternion_to_matrix(self.obj_rots)
-        #     xyzs_obj = torch.einsum('bij, bj -> bi', obj_rots, xyzs_local) + self.obj_trans
-        #     xyzs.append(xyzs_obj) 
+        # # # process obj pose
+        xyzs_local = []
+        for i, obj_name in enumerate(self.graph_obj_list):
+            assert self.get_visibility(model_name=obj_name)
+            xyzs_local.append(getattr(self, obj_name).get_xyz)
+        if len(self.graph_obj_list) > 0:
+            xyzs_local = torch.cat(xyzs_local, dim=0)
+            xyzs_local = xyzs_local.clone()
+            xyzs_local[self.flip_mask, self.flip_axis] *= -1
+            obj_rots = quaternion_to_matrix(self.obj_rots)
+            xyzs_obj = torch.einsum('bij, bj -> bi', obj_rots, xyzs_local) + self.obj_trans
+            xyzs.append(xyzs_obj) 
     
         xyzs = torch.cat(xyzs, dim=0)
         return xyzs            
@@ -474,9 +458,8 @@ class MisGaussianModel(nn.Module):
                 assert 0,NotImplementedError
                 model.training_setup()
                 
-        if self.actor_pose is not None:
-            assert 0
-            self.actor_pose.training_setup()
+        if self.poses_all_objs is not None:
+            self.poses_all_objs.training_setup()
         # if self.sky_cubemap is not None:
         #     assert 0
         #     self.sky_cubemap.training_setup()
@@ -495,8 +478,8 @@ class MisGaussianModel(nn.Module):
             model: Union[GaussianModelBase,TissueGaussianModel] = getattr(self, model_name)
             model.update_learning_rate(iteration)
         
-        if self.actor_pose is not None:
-            self.actor_pose.update_learning_rate(iteration)
+        if self.poses_all_objs is not None:
+            self.poses_all_objs.update_learning_rate(iteration)
         # if self.sky_cubemap is not None:
         #     self.sky_cubemap.update_learning_rate(iteration)
         # if self.color_correction is not None:
@@ -511,8 +494,8 @@ class MisGaussianModel(nn.Module):
             model: Union[GaussianModelBase,TissueGaussianModel] = getattr(self, model_name)
             model.update_optimizer()
 
-        if self.actor_pose is not None:
-            self.actor_pose.update_optimizer()
+        if self.poses_all_objs is not None:
+            self.poses_all_objs.update_optimizer()
         # if self.sky_cubemap is not None:
         #     self.sky_cubemap.update_optimizer()
         # if self.color_correction is not None:
@@ -643,7 +626,7 @@ class MisGaussianModel(nn.Module):
         box_reg_loss = 0.
         for obj_name in self.obj_list:
             assert 0
-            obj_model: GaussianModelActor = getattr(self, obj_name)
+            obj_model: ToolPose = getattr(self, obj_name)
             box_reg_loss += obj_model.box_reg_loss()
         box_reg_loss /= len(self.obj_list)
 

@@ -20,7 +20,6 @@ from arguments import ModelParams
 
 from typing import Union
 # from gaussian_model_base import GaussianModelBase
-from scene.tool_movement_model import GaussianModelActor
 from scene.mis_gaussian_model import MisGaussianModel
 from config.argsgroup_misgs import ModParams
 import torch.nn as nn
@@ -30,7 +29,7 @@ class Scene:
 
     # gaussians : TissueGaussianModel
     # gaussians : Union[GaussianModelBase, MisGaussianModel]
-    gaussians_or_controller : Union[TissueGaussianModel, GaussianModelActor, MisGaussianModel]
+    gaussians_or_controller : Union[TissueGaussianModel, MisGaussianModel]
     
     def __init__(self, \
                 #  args : ModelParams,
@@ -92,7 +91,7 @@ class Scene:
 
 
 
-    def gs_init(self,gaussians_or_controller : Union[TissueGaussianModel, GaussianModelActor, MisGaussianModel],\
+    def gs_init(self,gaussians_or_controller : Union[TissueGaussianModel, MisGaussianModel],\
                 load_iteration=None,
                 reset_camera_extent = None,
                 ):
@@ -123,7 +122,8 @@ class Scene:
                                                              time_line=self.maxtime)
             else:
                 assert self.point_cloud!=None
-                assert isinstance(self.gaussians_or_controller, Union[TissueGaussianModel,ToolModel])
+                assert isinstance(self.gaussians_or_controller, TissueGaussianModel) \
+                    or isinstance(self.gaussians_or_controller, ToolModel) 
                  #gs model
                 self.gaussians_or_controller.create_from_pcd(pcd=self.point_cloud, 
                                                              spatial_lr_scale=reset_camera_extent, 

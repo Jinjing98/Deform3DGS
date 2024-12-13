@@ -104,12 +104,14 @@ class EndoNeRF_Dataset(object):
         n_frames = len(self.image_paths)
         self.train_idxs = [i for i in range(n_frames) if (i-1) % test_every != 0]
         self.test_idxs = [i for i in range(n_frames) if (i-1) % test_every == 0]
-        self.video_idxs = [i for i in range(n_frames)]
+        self.video_idxs = self.test_idxs #[i for i in range(n_frames)]
+        self.all_idxs = [i for i in range(n_frames)]
         #jj
 
         self.camera_timestamps = {"0":{"train_timestamps": self.train_idxs,\
                                 "test_timestamps": self.test_idxs,
-                                "video_timestamps": self.test_idxs,
+                                "video_timestamps": self.video_idxs,
+                                "all_timestamps": self.all_idxs,
                                 }}
 
         self.maxtime = 1.0
@@ -168,6 +170,7 @@ class EndoNeRF_Dataset(object):
             R = np.transpose(R) #c2w
             self.image_poses.append((R, T))
             self.image_times.append(idx / poses.shape[0])
+            
         
         # get paths of images, depths, masks, etc.
         agg_fn = lambda filetype: sorted(glob.glob(os.path.join(self.root_dir, filetype, "*.png")))
@@ -238,11 +241,12 @@ class EndoNeRF_Dataset(object):
             pose[:3,-1] = T
             cam_metadata = dict()
             cam_metadata['frame'] = image#frames[i]
-            cam_metadata['cam'] = idx,#cams[i]
+            cam_metadata['cam'] = 0,#idx,#cams[i]
             cam_metadata['frame_idx'] = idx #frames_idx[i]
             cam_metadata['ego_pose'] = pose
             cam_metadata['extrinsic'] = self.K
-            cam_metadata['timestamp'] = time #cams_timestamps[i]
+            # cam_metadata['timestamp'] = time #cams_timestamps[i]
+            cam_metadata['timestamp'] = idx #cams_timestamps[i]
             if idx in self.train_idxs:
                 cam_metadata['is_val'] = False
                 # self.camera_timestamps[idx]['train_timestamps'].append(time)
@@ -583,14 +587,14 @@ class EndoNeRF_Dataset(object):
         pts_wld = np.transpose(pose @ np.transpose(pts_cam_homo))
         xyz = pts_wld[:, :3]
         return xyz
-    def load_other_obj_meta(self,cameras = [0]):
+    def load_other_obj_meta(self,cameras = [0],num_frames = None):
         print('todo', 'fake object obj traklets etc just for going through')
         scene_metadata = {}
         #fake:
         obj_tracklets = None
         tracklet_timestamps = None
         obj_info = None
-        num_frames = None
+        # num_frames = None
         obj_tracklets = None
         exts = []
 
@@ -606,25 +610,7 @@ class EndoNeRF_Dataset(object):
         #most important for misgs
         print('most important for misgs')
         scene_metadata['camera_timestamps'] = self.camera_timestamps
-
-        # 5. We write scene center and radius to scene metadata    
-        # scene_metadata['scene_center'] = nerf_normalization['center']
-        # scene_metadata['scene_radius'] = nerf_normalization['radius']
-        # print(f'Scene extent: {nerf_normalization["radius"]}')
-
-        # # Get sphere center
-        # lidar_ply_path = os.path.join(cfg.model_path, 'input_ply/points3D_lidar.ply')
-        # if os.path.exists(lidar_ply_path):
-        #     pass
-        #     sphere_pcd: BasicPointCloud = fetchPly(lidar_ply_path)
-        # else:
-        #     pass
-        #     sphere_pcd: BasicPointCloud = fetchPly(bkgd_ply_path)
-        
-        # sphere_normalization = get_Sphere_Norm(sphere_pcd.points)
-        # scene_metadata['sphere_center'] = sphere_normalization['center']
-        # scene_metadata['sphere_radius'] = sphere_normalization['radius']
-        # print(f'Sphere extent: {sphere_normalization["radius"]}')
+ 
         return scene_metadata
     
 

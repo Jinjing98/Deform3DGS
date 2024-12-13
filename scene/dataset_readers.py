@@ -249,7 +249,8 @@ def readEndoNeRFInfo(datadir,tool_mask = 'use',init_mode = None,
     cam_metadata = {}
     if load_other_obj_meta:
         assert cfg != None
-        scene_metadata = endo_dataset.load_other_obj_meta(cameras=[0])
+        scene_metadata = endo_dataset.load_other_obj_meta(cameras=[0],
+                                                          num_frames=None)
         #udpate
         scene_metadata['scene_center'] = nerf_normalization['translate']
         scene_metadata['scene_radius'] = nerf_normalization['radius']

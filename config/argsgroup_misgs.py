@@ -175,6 +175,18 @@ class OptParams(ParamGroup_stree):
         self.pruning_from_iter = 500
         self.pruning_interval = 100
 
+        #jj posemodel needed
+        self.track_position_lr_delay_mult = 0.01
+        self.track_position_lr_init = 0.005
+        self.track_position_lr_final = 5.0e-5
+        self.track_position_max_steps = 30000
+
+        self.track_rotation_lr_delay_mult = 0.01
+        self.track_rotation_lr_init = 0.001
+        self.track_rotation_lr_final = 1.0e-5
+        self.track_rotation_max_steps = 30000
+
+
 
 
         super().__init__(parser, "Optim Parameters")
@@ -193,11 +205,11 @@ class ModParams(ParamGroup_stree):
         self.nsg = CN()
         self.nsg.include_bkgd = False # include background
         self.nsg.include_sky = False # include sky cubemap
-        self.nsg.opt_track = False # tracklets optimization
         #jj extend
-        self.nsg.include_tissue = False  #True # include background
+        self.nsg.include_tissue = True  #True # include background
         self.nsg.include_obj = True # include object
-        self.nsg.include_obj_pose = False #True # include object
+        self.nsg.include_obj_pose = True # include object
+        self.nsg.opt_track = True # tracklets optimization
 
         self.sky = CN()
         self.sky.resolution = 1024

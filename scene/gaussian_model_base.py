@@ -171,13 +171,13 @@ class GaussianModelBase(nn.Module):
     def get_scaling(self):
         return self.scaling_activation(self._scaling)
     
-    @property
-    def get_rotation(self):
-        return self.rotation_activation(self._rotation)
+    # @property
+    # def get_rotation(self):
+    #     return self.rotation_activation(self._rotation)
     
-    @property
-    def get_xyz(self):
-        return self._xyz
+    # @property
+    # def get_xyz(self):
+    #     return self._xyz
     
     @property
     def get_features(self):
