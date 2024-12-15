@@ -97,6 +97,8 @@ def training_misgsmodel(args,use_streetgs_render = False):
 def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                                render_stree_param_for_ori_train_report = None,
                                use_streetgs_render = False,
+                            #    debug_getxyz_misgs = True,
+                               debug_getxyz_misgs = False,
                                
                                ):
     
@@ -208,7 +210,10 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
         if cfg.model.nsg.include_obj:
             # render_pkg_tool = gaussians_renderer.render_object(viewpoint_cam, gaussians)
-            render_pkg_tool = tool_render(viewpoint_cam, controller.obj_tool1, cfg.render, background)
+            render_pkg_tool = tool_render(viewpoint_cam, controller.obj_tool1, cfg.render, background,
+                                          debug_getxyz_misgs=debug_getxyz_misgs,
+                                          misgs_model=controller,
+                                          )
             image_tool, depth_tool, viewspace_point_tensor_tool, visibility_filter_tool, radii_tool = \
                 render_pkg_tool["render"], render_pkg_tool["depth"], render_pkg_tool["viewspace_points"], \
                     render_pkg_tool["visibility_filter"], render_pkg_tool["radii"]
@@ -220,8 +225,8 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
                 + optim_args.lambda_dssim * (1.0 - ssim(image_tool.to(torch.double), gt_image.to(torch.double), \
                                                         mask=tool_mask))
-            # loss += tool_loss
-            loss = 0*loss+tool_loss
+            loss += tool_loss
+            # loss = 0*loss+tool_loss
 
 
 
@@ -260,7 +265,10 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                             render_pkg= fdm_render(viewpoint_cam, sub_gs_model, cfg.render, background)
                         except:
                             assert 'tool' in model_name
-                            render_pkg= tool_render(viewpoint_cam, sub_gs_model, cfg.render, background)
+                            render_pkg= tool_render(viewpoint_cam, sub_gs_model, cfg.render, background,
+                                                    debug_getxyz_misgs = debug_getxyz_misgs,
+                                                    misgs_model = controller,
+                                                    )
 
                         image_obj, depth_obj = render_pkg["render"], render_pkg['depth']
 

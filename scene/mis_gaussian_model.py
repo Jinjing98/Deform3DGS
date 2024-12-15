@@ -293,7 +293,8 @@ class MisGaussianModel(nn.Module):
         #         num_gaussians = getattr(self, model_name).get_xyz.shape[0]
         #         self.num_gaussians += num_gaussians
         #////////////////////////
-        if len(self.graph_obj_list) > 0:
+        # if len(self.graph_obj_list) > 0:
+        if len(self.graph_obj_list) > 0 and self.include_obj_pose:
             self.obj_rots = []
             self.obj_trans = []
             for i, obj_name in enumerate(self.graph_obj_list):
@@ -336,6 +337,48 @@ class MisGaussianModel(nn.Module):
         scalings = torch.cat(scalings, dim=0)
         return scalings
             
+
+    @property
+    def get_rotation_obj_only(self):
+        rotations = []
+        # process obj pose
+        rotations_local = []
+        for i, obj_name in enumerate(self.graph_obj_list):
+            assert self.get_visibility(model_name=obj_name)
+            rotations_local.append(getattr(self, obj_name).get_rotation)
+        if len(self.graph_obj_list) > 0:
+            rotations_local = torch.cat(rotations_local, dim=0)
+            rotations_local = rotations_local.clone()
+            rotations_local[self.flip_mask] = quaternion_raw_multiply(self.flip_matrix, rotations_local[self.flip_mask])
+            rotations_obj = quaternion_raw_multiply(self.obj_rots, rotations_local)
+            rotations_obj = torch.nn.functional.normalize(rotations_obj)
+            rotations.append(rotations_obj)
+
+        rotations = torch.cat(rotations, dim=0)
+        return rotations
+    
+    @property
+    def get_xyz_obj_only(self):
+        xyzs = []
+        # # # process obj pose
+        xyzs_local = []
+        for i, obj_name in enumerate(self.graph_obj_list):
+            assert self.get_visibility(model_name=obj_name)
+            xyzs_local.append(getattr(self, obj_name).get_xyz)
+        if len(self.graph_obj_list) > 0:
+            xyzs_local = torch.cat(xyzs_local, dim=0)
+            xyzs_local = xyzs_local.clone()
+            xyzs_local[self.flip_mask, self.flip_axis] *= -1
+            obj_rots = quaternion_to_matrix(self.obj_rots)
+            xyzs_obj = torch.einsum('bij, bj -> bi', obj_rots, xyzs_local) + self.obj_trans
+            xyzs.append(xyzs_obj) 
+    
+        xyzs = torch.cat(xyzs, dim=0)
+        return xyzs            
+
+    
+
+
     @property
     def get_rotation(self):
         assert 0,'only implement below when use misgs render'
@@ -387,9 +430,8 @@ class MisGaussianModel(nn.Module):
     
         xyzs = torch.cat(xyzs, dim=0)
         return xyzs            
-
     @property
-    def get_features(self):                
+    def get_features(self):
         features = []
         for model_name in self.model_name_id.keys():
             if self.get_visibility(model_name=model_name):

@@ -17,7 +17,15 @@ from utils.sh_utils import eval_sh
 
 
  
-def tool_render(viewpoint_camera, pc : ToolModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):
+def tool_render(viewpoint_camera, 
+                pc : ToolModel, 
+                pipe, 
+                bg_color : torch.Tensor, 
+                scaling_modifier = 1.0, 
+                override_color = None,
+                debug_getxyz_misgs = False,
+                misgs_model = None,
+                ):
     """
     Render the scene. 
     
@@ -68,7 +76,7 @@ def tool_render(viewpoint_camera, pc : ToolModel, pipe, bg_color : torch.Tensor,
     # add deformation to each points
     # deformation = pc.get_deformation
     means3D = pc.get_xyz
-    ori_time = torch.tensor(viewpoint_camera.time).to(means3D.device)
+    # ori_time = torch.tensor(viewpoint_camera.time).to(means3D.device)
     means2D = screenspace_points
     opacity = pc._opacity
 
@@ -77,46 +85,27 @@ def tool_render(viewpoint_camera, pc : ToolModel, pipe, bg_color : torch.Tensor,
     scales = None
     rotations = None
     cov3D_precomp = None
-    
     if pipe.compute_cov3D_python:
+        assert 0
         cov3D_precomp = pc.get_covariance(scaling_modifier)
     else:
         scales = pc._scaling
         rotations = pc._rotation
-    # deformation_point = pc._deformation_table
-    # means3D_deform, scales_deform, rotations_deform = pc.deformation(means3D[deformation_point], scales[deformation_point], 
-                                                                        #  rotations[deformation_point],
-                                                                        #  ori_time)
-    # opacity_deform = opacity[deformation_point]
-        
-    # print(time.max())
-    # with torch.no_grad():
-        # pc._deformation_accum[deformation_point] += torch.abs(means3D_deform - means3D[deformation_point])
 
-    # means3D_final = torch.zeros_like(means3D)
-    # rotations_final = torch.zeros_like(rotations)
-    # scales_final = torch.zeros_like(scales)
-    # opacity_final = torch.zeros_like(opacity)
-    # means3D_final[deformation_point] =  means3D_deform
-    # rotations_final[deformation_point] =  rotations_deform
-    # scales_final[deformation_point] =  scales_deform
-    # opacity_final[deformation_point] = opacity_deform
-    # means3D_final[~deformation_point] = means3D[~deformation_point]
-    # rotations_final[~deformation_point] = rotations[~deformation_point]
-    # scales_final[~deformation_point] = scales[~deformation_point]
-    # opacity_final[~deformation_point] = opacity[~deformation_point]
+    #udpate means_3d(xyz) and rotations
+    if debug_getxyz_misgs:
+        include_list = list(set(misgs_model.model_name_id.keys()))
+        misgs_model.set_visibility(include_list)# set the self.include_list for misgs_model
+        misgs_model.parse_camera(viewpoint_camera)# set the obj_rots/ graph_obj_list for misgs_model
+
+        means3D = misgs_model.get_xyz_obj_only
+        rotations = misgs_model.get_rotation_obj_only
 
 
     means3D_final = means3D
     rotations_final = rotations
     scales_final = scales
     opacity_final = opacity
-
-
-
-
-
-
 
     scales_final = pc.scaling_activation(scales_final)
     rotations_final = pc.rotation_activation(rotations_final)
