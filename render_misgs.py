@@ -208,7 +208,6 @@ class MisGaussianRenderer():
         # sys.path.append('/mnt/cluster/workspaces/jinjingxu/proj/street_gaussians/lib/utils/camera_utils')
         # from lib.utils.camera_utils 
         # import make_rasterizer_misgs
-        # print('todo ')
         rasterizer = make_rasterizer_misgs(viewpoint_camera, pc.max_sh_degree, bg_color, scaling_modifier,
                                      cfg = self.cfg)
         # sys.path = our_sys_path_container

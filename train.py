@@ -284,9 +284,9 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
         #jj    
         from scene.mis_gaussian_model import MisGaussianModel
         if isinstance(scene.gaussians_or_controller, MisGaussianModel):
-            print('todo During traning report we only do tissue')
             # assert 0, scene.gaussians_or_controller.model
             tb_writer.add_scalar('total_points', scene.gaussians_or_controller.tissue.get_xyz.shape[0], iteration)
+            tb_writer.add_scalar('total_points_tool', scene.gaussians_or_controller.obj_tool1.get_xyz.shape[0], iteration)
         else:
             tb_writer.add_scalar('total_points', scene.gaussians_or_controller.get_xyz.shape[0], iteration)
 

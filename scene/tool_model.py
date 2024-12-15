@@ -78,7 +78,6 @@ class ToolModel:
 
         # init the ToolPose model:
         # assert 0
-
         
         # # FDM add
         # N = fused_point_cloud.shape[0]
@@ -99,12 +98,6 @@ class ToolModel:
         # FDM added
         # self._deformation_table = torch.gt(torch.ones((self.get_xyz.shape[0]),device="cuda"),0)
     
-
-
-
-
-
-
     def setup_functions(self):
         def build_covariance_from_scaling_rotation(scaling, scaling_modifier, rotation):
             L = build_scaling_rotation(scaling_modifier * scaling, rotation)

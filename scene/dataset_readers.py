@@ -255,7 +255,6 @@ def readEndoNeRFInfo(datadir,tool_mask = 'use',init_mode = None,
         scene_metadata['scene_center'] = nerf_normalization['translate']
         scene_metadata['scene_radius'] = nerf_normalization['radius']
         sphere_normalization = nerf_normalization
-        print('todo probably have issue')
         scene_metadata['sphere_center'] = sphere_normalization['translate']
         scene_metadata['sphere_radius'] = sphere_normalization['radius']
 
@@ -283,6 +282,7 @@ def readEndoNeRFInfo(datadir,tool_mask = 'use',init_mode = None,
         
         for piece_name in xyz_dict.keys():
             xyz = xyz_dict[piece_name]
+            # print(f'debug xyz {piece_name} {xyz.shape} {xyz[0,0]}')
             rgb = rgb_dict[piece_name]
             normals = normals_dict[piece_name]
             

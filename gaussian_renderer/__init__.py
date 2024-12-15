@@ -133,6 +133,7 @@ def render_flow(viewpoint_camera, pc : TissueGaussianModel, pipe, bg_color : tor
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
     # rendered_image, radii, depth = rasterizer(
     # rendered_image, radii, depth, _, _ = rasterizer( #latest: no means2d_densify; return 5 values
+    # print('debug tissue',means3D_final.shape,means3D_final[0,0])
     rendered_image, radii, depth,  = rasterizer( #latest: no means2d_densify; return 5 values
         means3D = means3D_final,
         means2D = means2D,

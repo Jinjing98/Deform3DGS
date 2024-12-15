@@ -275,7 +275,6 @@ class MisGaussianModel(nn.Module):
                     # assert 0,timestamp
                     # start_timestamp, end_timestamp = model.start_timestamp, model.end_timestamp
                     # if timestamp >= start_timestamp and timestamp <= end_timestamp and self.get_visibility(obj_name):
-                    print('todo check the timestamp within the start and end')
                     self.num_gaussians += model.get_xyz.shape[0]
                     self.graph_obj_list.append(model_name)
                 else:

@@ -104,8 +104,8 @@ class EndoNeRF_Dataset(object):
         n_frames = len(self.image_paths)
         self.train_idxs = [i for i in range(n_frames) if (i-1) % test_every != 0]
         self.test_idxs = [i for i in range(n_frames) if (i-1) % test_every == 0]
-        self.video_idxs = self.test_idxs #[i for i in range(n_frames)]
         self.all_idxs = [i for i in range(n_frames)]
+        self.video_idxs = self.all_idxs#self.test_idxs #[i for i in range(n_frames)]
         #jj
 
         self.camera_timestamps = {"0":{"train_timestamps": self.train_idxs,\
@@ -588,7 +588,6 @@ class EndoNeRF_Dataset(object):
         xyz = pts_wld[:, :3]
         return xyz
     def load_other_obj_meta(self,cameras = [0],num_frames = None):
-        print('todo', 'fake object obj traklets etc just for going through')
         scene_metadata = {}
         #fake:
         obj_tracklets = None

@@ -66,11 +66,9 @@ def training_misgsmodel(args,use_streetgs_render = False):
 
     os.makedirs(cfg.trained_model_dir,exist_ok=True)
     os.makedirs(cfg.point_cloud_dir,exist_ok=True)
-    print('todo maybe support write CN in addtion to args_group..')
     from train import prepare_output_and_logger
     tb_writer = prepare_output_and_logger(model_path=cfg.expname, write_args=args)
     timer = Timer()
-    print('todo clean the sceneinfo meta and caminfo meta')
     load_other_obj_meta=True #load within the sceneinfo
     load_pcd_dict_in_sceneinfo=True #piece wise pcd init
     print('////////////////***************///////////')
@@ -97,8 +95,8 @@ def training_misgsmodel(args,use_streetgs_render = False):
 def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                                render_stree_param_for_ori_train_report = None,
                                use_streetgs_render = False,
-                            #    debug_getxyz_misgs = True,
-                               debug_getxyz_misgs = False,
+                               debug_getxyz_misgs = True,
+                            #    debug_getxyz_misgs = False,
                                
                                ):
     
@@ -152,7 +150,7 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         #     if resolution_scales:  
         #         scale = resolution_scales.pop()
 
-        print('potentially moving out the loop for effeciency.')
+        # print('potentially moving out the loop for effeciency.')
         # Pick a random Camera
         if not viewpoint_stack:
             viewpoint_stack = scene.getTrainCameras().copy()
@@ -179,7 +177,6 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         if (iteration - 1) == training_args.debug_from:
             cfg.render.debug = True
             
-        print('!!!!TODO only support tisseu for now...')
         bg_color = [1, 1, 1] if cfg.data.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
@@ -195,7 +192,6 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 render_pkg_tissue["render"], render_pkg_tissue["depth"], render_pkg_tissue["viewspace_points"], \
                     render_pkg_tissue["visibility_filter"], render_pkg_tissue["radii"]
             acc_tissue = torch.zeros_like(depth_tissue)
-            print('todo not sure acc...')
 
             # image_tissue_vis = image_tissue.to('cpu')
 
@@ -204,7 +200,7 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + \
                 optim_args.lambda_dssim * (1.0 - ssim(image_tissue.to(torch.double), \
                                                       gt_image.to(torch.double), mask=tissue_mask))
-            print('Missing Depth loss...')
+            # print('Missing Depth loss...')
         else:
             assert 0,'alwasy include tissue'
 
@@ -225,8 +221,10 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
                 + optim_args.lambda_dssim * (1.0 - ssim(image_tool.to(torch.double), gt_image.to(torch.double), \
                                                         mask=tool_mask))
-            loss += tool_loss
-            # loss = 0*loss+tool_loss
+            # loss = tool_loss
+            # loss += tool_loss
+            loss = 0*loss+tool_loss
+            # loss = loss+tool_loss*0
 
 
 
@@ -236,7 +234,6 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
 
         # follow deform3dgs
-        # print('todo Correct? ')
 
         iter_end.record()
         is_save_images = True
@@ -251,7 +248,6 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             row0 = torch.cat([gt_image, gt_image,gt_image], dim=2)
             # acc = acc.repeat(3, 1, 1)
             with torch.no_grad():
-                print('!!!!TODO only support tisseu for now...')
                 bg_color = [1, 1, 1] if cfg.data.white_background else [0, 0, 0]
                 background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
@@ -281,7 +277,10 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             image_to_show = torch.cat(image_to_show_list, dim=1)
             image_to_show = torch.clamp(image_to_show, 0.0, 1.0)
             os.makedirs(f"{cfg.model_path}/log_images", exist_ok = True)
-            save_img_torch(image_to_show, f"{cfg.model_path}/log_images/{iteration}.jpg")
+            # save_img_torch(image_to_show, f"{cfg.model_path}/log_images/{iteration}.jpg")
+            log_img_name = f'it{iteration}_name{viewpoint_cam.image_name}_id{viewpoint_cam.id}_time{viewpoint_cam.time}'
+            log_img_name = f'id{viewpoint_cam.id}_it{iteration}_name{viewpoint_cam.image_name}_time{viewpoint_cam.time}'
+            save_img_torch(image_to_show, f"{cfg.model_path}/log_images/{log_img_name}.jpg")
         
         with torch.no_grad():
             # Log
@@ -296,7 +295,6 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                     psnr_dict[viewpoint_cam.id] = 0.4 * psnr(image_tissue, gt_image, tissue_mask).mean().float() + 0.6 * psnr_dict[viewpoint_cam.id]
             else:
                 assert 0,'alwasy include tissue'
-            print('todo ?')            
 
             if iteration % 10 == 0:
                 progress_bar.set_postfix({"Exp": f"{cfg.task}-{cfg.exp_name}", 
@@ -368,7 +366,6 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
 
             if render_stree_param_for_ori_train_report!= None:
-                print('todo ugly')
                 training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), 
                             training_args.test_iterations, scene, 
                             # render,[render_stree_param_for_ori_train_report, background]
@@ -409,7 +406,6 @@ def training_report_misgs(tb_writer,
     # Report test and samples of training set
     if iteration in testing_iterations:
     # if iteration in testing_iterations or True:
-        print('todo hard set the flag to True log in test')
         torch.cuda.empty_cache()
         validation_configs = ({'name': 'test/test_view', 
                                'cameras' : scene.getTestCameras()},
@@ -443,10 +439,6 @@ def training_report_misgs(tb_writer,
                         psnr_test += psnr(image, gt_image, tissue_mask).mean().double()
                     else:
                         assert 0,'always include tissue'
-
-                    print('todo')
-
-
 
 
                 psnr_test /= len(config['cameras'])
