@@ -75,7 +75,7 @@ def tool_render(viewpoint_camera,
     # means3D = pc.get_xyz
     # add deformation to each points
     # deformation = pc.get_deformation
-    means3D = pc.get_xyz
+    # means3D = pc.get_xyz
     # ori_time = torch.tensor(viewpoint_camera.time).to(means3D.device)
     means2D = screenspace_points
     opacity = pc._opacity
@@ -90,16 +90,19 @@ def tool_render(viewpoint_camera,
         cov3D_precomp = pc.get_covariance(scaling_modifier)
     else:
         scales = pc._scaling
-        rotations = pc._rotation
+        # rotations = pc._rotation
 
     #udpate means_3d(xyz) and rotations
     if debug_getxyz_misgs:
         include_list = list(set(misgs_model.model_name_id.keys()))
         misgs_model.set_visibility(include_list)# set the self.include_list for misgs_model
         misgs_model.parse_camera(viewpoint_camera)# set the obj_rots/ graph_obj_list for misgs_model
+        # print('debug after obj_trans',misgs_model.obj_trans)
 
         means3D = misgs_model.get_xyz_obj_only
         rotations = misgs_model.get_rotation_obj_only
+    else:
+        assert 0
 
 
     means3D_final = means3D
@@ -117,6 +120,7 @@ def tool_render(viewpoint_camera,
     colors_precomp = None
     if override_color is None:
         if pipe.convert_SHs_python:
+            assert 0
             shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)
             dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.cuda().repeat(pc.get_features.shape[0], 1))
             dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
@@ -130,6 +134,7 @@ def tool_render(viewpoint_camera,
     # Rasterize visible Gaussians to image, obtain their radii (on screen). 
     # rendered_image, radii, depth = rasterizer(
     # rendered_image, radii, depth, _, _ = rasterizer( #latest: no means2d_densify; return 5 values
+    # print('debug tool',means3D_final.shape,means3D_final[0,0])
     rendered_image, radii, depth,  = rasterizer( #latest: no means2d_densify; return 5 values
         means3D = means3D_final,
         means2D = means2D,

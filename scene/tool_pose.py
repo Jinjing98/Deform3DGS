@@ -16,16 +16,22 @@ class ToolPose(nn.Module):
         # tracklets: [num_frames, max_obj, [track_id, x, y, z, qw, qx, qy, qz]]
         # frame_timestamps: [num_frames]
         super().__init__()
+        print('Think about learn with lie..(now rpy)')
 
         self.cfg_optim = cfg_optim
         self.camera_timestamps = camera_timestamps
         self.timestamps = self.camera_timestamps[str(cam_id)]['all_timestamps']
         # we predict abs pose
         frames_num = len(self.timestamps)
+        self.input_trans = torch.ones([frames_num,objs_num,3]).float().cuda()
         self.input_trans = torch.zeros([frames_num,objs_num,3]).float().cuda()
-        # self.input_rots_mat = torch.eye(4).unsqueeze(0).unsqueeze(0).repeat(frames_num,objs_num,1,1).float().cuda()
+        # upate
+        # need good init!
+        x_values = torch.arange(1, frames_num + 1).unsqueeze(1).expand(-1, objs_num) # Shape [frames_num, objs_num]
+        self.input_trans[:, :, 0] = -x_values  # Assign to the x-values (index 0)
+
+        self.input_rots_rpy = torch.ones([frames_num,objs_num,3]).float().cuda()
         self.input_rots_rpy = torch.zeros([frames_num,objs_num,3]).float().cuda()
-        # self.input_rots_quant = torch.zeros([frames_num,objs_num,3]).float().cuda()
         assert objs_num == 1,objs_num
 
         self.opt_track = opt_track #cfg.model.nsg.opt_track
@@ -48,13 +54,18 @@ class ToolPose(nn.Module):
                                                     lr_final=self.cfg_optim.track_position_lr_final,
                                                     lr_delay_mult=self.cfg_optim.track_position_lr_delay_mult,
                                                     max_steps=self.cfg_optim.track_position_max_steps,
-                                                    warmup_steps=self.cfg_optim.opacity_reset_interval)
+                                                    # warmup_steps=self.cfg_optim.opacity_reset_interval,
+                                                    warmup_steps=self.cfg_optim.track_warmup_steps,
+                                                    )
             
             self.opt_rots_rpy_scheduler_args = get_expon_lr_func(lr_init=self.cfg_optim.track_rotation_lr_init,
                                                     lr_final=self.cfg_optim.track_rotation_lr_final,
                                                     lr_delay_mult=self.cfg_optim.track_rotation_lr_delay_mult,
                                                     max_steps=self.cfg_optim.track_rotation_max_steps,
-                                                    warmup_steps=self.cfg_optim.opacity_reset_interval) 
+                                                    # warmup_steps=self.cfg_optim.opacity_reset_interval,
+                                                    warmup_steps=self.cfg_optim.track_warmup_steps,
+                                                    
+                                                    ) 
 
             # self.opt_rots_mat_scheduler_args = get_expon_lr_func(lr_init=self.cfg_optim.track_rotation_lr_init,
             #                                         lr_final=self.cfg_optim.track_rotation_lr_final,
@@ -92,7 +103,10 @@ class ToolPose(nn.Module):
         cam_timestamp = camera.meta['timestamp']
         frame_idx = self.timestamps.index(cam_timestamp)
         # return self.input_trans[frame_idx, track_id]
-        return self.opt_trans[frame_idx, track_id]
+        trans = self.opt_trans[frame_idx, track_id] 
+        # print(f'debug opt_trans {frame_idx}: all_0?{not trans.any()} {trans}')
+        trans = trans + self.input_trans[frame_idx, track_id] 
+        return trans
 
 
    
@@ -101,7 +115,6 @@ class ToolPose(nn.Module):
         param to learn is rpy
         return in wxyz format(gs)'''
         
-        print('Think about learn with lie..(now rpy)')
         import math
         def euler_to_quaternion(roll_pitch_yaw):
             """
@@ -138,7 +151,11 @@ class ToolPose(nn.Module):
         frame_idx = self.timestamps.index(cam_timestamp)
         roll_pitch_yaw = self.opt_rots_rpy[frame_idx,track_id]
         quaternion = euler_to_quaternion(roll_pitch_yaw)
-        print("Quaternion (w, x, y, z):", quaternion)
+        roll_pitch_yaw_input = self.input_rots_rpy[frame_idx,track_id]
+        quaternion_input = euler_to_quaternion(roll_pitch_yaw_input)
+        quaternion = quaternion_raw_multiply(quaternion_input.unsqueeze(0), 
+                                    quaternion.unsqueeze(0)).squeeze(0)
+        # print("Quaternion (w, x, y, z):", quaternion)
         return quaternion
 
         
