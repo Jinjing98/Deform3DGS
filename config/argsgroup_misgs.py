@@ -189,6 +189,9 @@ class OptParams(ParamGroup_stree):
         #tool
         self.tool_prune_big_points = True
         self.track_warmup_steps = 0
+        # self.densify_grad_threshold_obj = 0.0002
+
+        # self.iterations = 30000
 
 
 

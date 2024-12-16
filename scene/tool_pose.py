@@ -12,12 +12,14 @@ class ToolPose(nn.Module):
                 #  obj_info, 
                  cfg_optim = None,
                  opt_track = True,
-                 cam_id = 0):
+                 cam_id = 0,
+                 cfg = None):
         # tracklets: [num_frames, max_obj, [track_id, x, y, z, qw, qx, qy, qz]]
         # frame_timestamps: [num_frames]
         super().__init__()
         print('Think about learn with lie..(now rpy)')
 
+        self.cfg = cfg
         self.cfg_optim = cfg_optim
         self.camera_timestamps = camera_timestamps
         self.timestamps = self.camera_timestamps[str(cam_id)]['all_timestamps']
@@ -28,7 +30,7 @@ class ToolPose(nn.Module):
         # upate
         # need good init!
         x_values = torch.arange(1, frames_num + 1).unsqueeze(1).expand(-1, objs_num) # Shape [frames_num, objs_num]
-        self.input_trans[:, :, 0] = -x_values  # Assign to the x-values (index 0)
+        # self.input_trans[:, :, 0] = -x_values  # Assign to the x-values (index 0)
 
         self.input_rots_rpy = torch.ones([frames_num,objs_num,3]).float().cuda()
         self.input_rots_rpy = torch.zeros([frames_num,objs_num,3]).float().cuda()
@@ -41,7 +43,6 @@ class ToolPose(nn.Module):
         else:
             assert 0, NotImplementedError
 
-
     def training_setup(self):
         if self.opt_track:
             params = [
@@ -53,6 +54,7 @@ class ToolPose(nn.Module):
             self.opt_trans_scheduler_args = get_expon_lr_func(lr_init=self.cfg_optim.track_position_lr_init,
                                                     lr_final=self.cfg_optim.track_position_lr_final,
                                                     lr_delay_mult=self.cfg_optim.track_position_lr_delay_mult,
+                                                    # max_steps=self.cfg.train.iterations,
                                                     max_steps=self.cfg_optim.track_position_max_steps,
                                                     # warmup_steps=self.cfg_optim.opacity_reset_interval,
                                                     warmup_steps=self.cfg_optim.track_warmup_steps,
@@ -61,6 +63,7 @@ class ToolPose(nn.Module):
             self.opt_rots_rpy_scheduler_args = get_expon_lr_func(lr_init=self.cfg_optim.track_rotation_lr_init,
                                                     lr_final=self.cfg_optim.track_rotation_lr_final,
                                                     lr_delay_mult=self.cfg_optim.track_rotation_lr_delay_mult,
+                                                    # max_steps=self.cfg.train.iterations,
                                                     max_steps=self.cfg_optim.track_rotation_max_steps,
                                                     # warmup_steps=self.cfg_optim.opacity_reset_interval,
                                                     warmup_steps=self.cfg_optim.track_warmup_steps,

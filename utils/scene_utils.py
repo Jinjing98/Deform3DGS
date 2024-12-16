@@ -92,3 +92,58 @@ def visualize_and_save_point_cloud(point_cloud, R, T, filename):
     # 保存渲染结果为图片
     plt.savefig(filename)
 
+def check_within_2D_mask(samples_xyz_in_cam,tool_mask,K,num_gaussians,
+                            vis_debug = False):
+    '''
+    samples_xyz: num,3
+    mask: h w
+    k: 3*3
+    notice can only constrian with init_mask, we can only easily get samples_xyz_in_cam for frist frame consideing current implementation
+    '''
+    #project xyz on 2D
+    assert K.dim() == 2,K.dim()
+    assert K.shape[-1] == 3
+    assert samples_xyz_in_cam.dim() == 2
+    proj = (K @ samples_xyz_in_cam.T).T
+    proj_2d = proj[:,:2]/proj[:,2:]
+    proj_2d = proj_2d.to(torch.long)
+    assert proj_2d.dim() == 2
+    assert proj_2d.shape[-1]==2
+    assert tool_mask.dim() == 2 ,tool_mask.shape
+    assert proj_2d.shape[0] == num_gaussians
+    # Check if points are within bounds of the mask
+    # rows, cols = proj_2d[:, 0], proj_2d[:, 1]
+    cols, rows = proj_2d[:, 0], proj_2d[:, 1]
+    #///////////////////////////            
+    if vis_debug:
+        import cv2
+        # Convert the binary mask to a uint8 image (required by OpenCV)
+        binary_mask_np = (tool_mask.cpu().numpy() * 255).astype(np.uint8)
+        # Convert the binary mask to a BGR image for colored visualization
+        binary_mask_color = cv2.cvtColor(binary_mask_np, cv2.COLOR_GRAY2BGR)
+        # Draw the 2D points on the mask
+        for point in proj_2d:
+            u, v = int(point[0].item()), int(point[1].item())  # Convert to integer pixel coordinates
+            # Draw a red circle for each point
+            cv2.circle(binary_mask_color, (u, v), radius=5, color=(0, 0, 255), thickness=-1)
+        vis_trd = 4 #40000
+        if proj_2d.shape[0]>vis_trd:
+            # Display the image using OpenCV
+            cv2.imshow("Projected 2D Points on Binary Mask", binary_mask_color)
+            cv2.waitKey(1)
+            if 0xFF == ord('q'):  # You can replace 'q' with any key you want
+                print("Exiting on key press")
+                cv2.destroyAllWindows()
+    #/////////////////////////////
+    valid_indices = (rows >= 0) & (rows < tool_mask.shape[0]) & \
+                    (cols >= 0) & (cols < tool_mask.shape[1])
+    # assert 0,f'{rows}{cols}{tool_mask.shape}'
+    # Initialize result tensor (default to True)
+    # points_inside_2D_mask = torch.ones((num_gaussians), dtype=torch.bool).to(samples_xyz_in_cam.device)
+    points_inside_2D_mask = torch.zeros((num_gaussians), dtype=torch.bool).to(samples_xyz_in_cam.device)
+    # Check if valid points are within the mask
+    points_inside_2D_mask[valid_indices] = tool_mask[rows[valid_indices], cols[valid_indices]]
+    # print(f'debug  {num_gaussians} {points_inside_2D_mask.sum()} {len(valid_indices)} {cols.max()} {cols.min()} {rows.max()} {rows.min()}' )
+    # debug
+    # points_inside_2D_mask = torch.ones((num_gaussians), dtype=torch.bool).to(samples_xyz_in_cam.device)
+    return points_inside_2D_mask 

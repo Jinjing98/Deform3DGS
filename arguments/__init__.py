@@ -133,7 +133,7 @@ class OptimizationParams(ParamGroup):
 
         self.track_warmup_steps = 0
         self.tool_prune_big_points = False
-
+        self.densify_grad_threshold_obj = 0.0002
         super().__init__(parser, "Optimization Parameters")
 
 def ambigious_search_cfg(args_cmdline):

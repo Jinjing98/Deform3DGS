@@ -346,6 +346,9 @@ if __name__ == "__main__":
             expname_append += f'_{args.tool_mask}'
         if hasattr(args,'init_mode'):
             expname_append += f'_{args.init_mode}'
+        if use_stree_grouping_strategy:
+            expname_append += f'_{args.track_warmup_steps}'
+
         setattr(args, 'expname', f'{args.expname}{expname_append}')
         
         if 'pulling' in args.source_path or 'cutting' in args.source_path:

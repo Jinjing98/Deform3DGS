@@ -131,7 +131,8 @@ class MisGaussianModel(nn.Module):
                                                 camera_timestamps=camera_timestamps, 
                                                 cfg_optim=self.cfg.optim,
                                                 opt_track = self.cfg.model.nsg.opt_track,
-                                                cam_id=0)
+                                                cam_id=0,
+                                                cfg = self.cfg)
                 self.obj_list.append(self.poses_all_objs)
                 
     
@@ -662,9 +663,9 @@ class MisGaussianModel(nn.Module):
                                                             min_opacity = min_opacity, 
                                                             extent=extent, 
                                                             K=torch.Tensor(self.viewpoint_camera.K),
-                                                            init_tool_mask=torch.Tensor(self.metadata['init_mask_dict']['obj_tool1']).unsqueeze(0).to(torch.bool),
+                                                            init_tool_mask=torch.Tensor(self.metadata['init_mask_dict']['obj_tool1']).to(torch.bool),#.unsqueeze(0),
                                                             # init_tool_mask=torch.Tensor(self.viewpoint_camera.tool_mask),
-                                                            # current_tool_mask = torch.Tensor(self.viewpoint_camera.tool_mask),
+                                                            current_tool_mask = torch.Tensor(self.viewpoint_camera.tool_mask).squeeze(0),
                                                             )
 
             
