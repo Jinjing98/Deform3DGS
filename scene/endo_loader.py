@@ -149,7 +149,9 @@ class EndoNeRF_Dataset(object):
             self.K = np.array([[focal, 0 , W//2],
                                         [0, focal, H//2],
                                         [0, 0, 1]]).astype(np.float32)
-            poses = np.concatenate([poses[..., :1], -poses[..., 1:2], -poses[..., 2:3], poses[..., 3:4]], -1)
+            poses = np.concatenate([poses[..., :1], poses[..., 1:2], poses[..., 2:3], poses[..., 3:4]], -1)
+            print('the author did not fix the history bug of endogaussian, will affect earlier conlusion?')
+            # poses = np.concatenate([poses[..., :1], -poses[..., 1:2], -poses[..., 2:3], poses[..., 3:4]], -1)
         else:
             assert 0, NotImplemented
         # prepare poses
@@ -290,6 +292,7 @@ class EndoNeRF_Dataset(object):
                     Znear=None, Zfar=None, 
                     h=self.img_wh[1], w=self.img_wh[0],
                     masks = masks,
+                    dataset_name_for_different_z = self.dataset,
                 )
             cam_infos.append(cam_info)
 
@@ -352,7 +355,10 @@ class EndoNeRF_Dataset(object):
         colors_dict = {}
         normals_dict = {}
         for piece_name,piece_mask in masks_dict.items():
-            mask = np.logical_and(depth_mask, piece_mask)   
+            # print('to do debug: do you really want the depth mask take effect?it may also be source of frame_bound issue')
+            print('to do debug: endo nerf mask is trash...the source of unclear boundary!.')
+            mask = np.logical_and(depth_mask, piece_mask)  
+            # mask = piece_mask 
             color = np.array(Image.open(self.image_paths[0]))/255.0
             pts, colors, _ = self.get_pts_cam(depth, mask, color, disable_mask=False)
             c2w = self.get_camera_poses((R, T))
