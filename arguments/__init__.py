@@ -130,6 +130,10 @@ class OptimizationParams(ParamGroup):
         self.opacity_threshold_fine_init = 0.005
         self.opacity_threshold_fine_after = 0.005
         
+
+        self.track_warmup_steps = 0
+        self.tool_prune_big_points = False
+
         super().__init__(parser, "Optimization Parameters")
 
 def ambigious_search_cfg(args_cmdline):

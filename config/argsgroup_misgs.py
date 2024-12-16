@@ -186,7 +186,8 @@ class OptParams(ParamGroup_stree):
         self.track_rotation_lr_final = 1.0e-5
         self.track_rotation_max_steps = 30000
 
-
+        #tool
+        self.tool_prune_big_points = True
         self.track_warmup_steps = 0
 
 

@@ -278,8 +278,9 @@ def readEndoNeRFInfo(datadir,tool_mask = 'use',init_mode = None,
         except:
             pcd = None
     else:
-        xyz_dict, rgb_dict, normals_dict = endo_dataset.get_sparse_pts_dict_misgs(init_mode=init_mode)
-        
+        xyz_dict, rgb_dict, normals_dict, init_mask_dict = endo_dataset.get_sparse_pts_dict_misgs(init_mode=init_mode)
+        import copy
+        scene_metadata['init_mask_dict'] = copy.deepcopy(init_mask_dict)# used for tool densify condition
         for piece_name in xyz_dict.keys():
             xyz = xyz_dict[piece_name]
             # print(f'debug xyz {piece_name} {xyz.shape} {xyz[0,0]}')

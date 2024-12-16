@@ -366,7 +366,7 @@ class EndoNeRF_Dataset(object):
                 pts, colors = self.search_pts_colors_with_motion(pts, colors, mask, c2w)#MAPF
             elif init_mode == 'rand':
                 #/////////////////////////////////////////
-                rand_num_pts = 100_000
+                rand_num_pts = 100_000  
                 warnings.warn(f"tissue rand init(w.o concerning mask): generating random point cloud ({rand_num_pts})... w.o mask constrains?")
                 # use the params from deformable-3d-gs synthetic Blender scenes
                 pts = np.random.random((rand_num_pts, 3)) * 2.6 - 1.3
@@ -388,7 +388,8 @@ class EndoNeRF_Dataset(object):
             colors_dict[piece_name] = colors
             normals_dict[piece_name] = normals
         # return pts, colors, normals
-        return pts_dict,colors_dict,normals_dict
+        # return pts_dict,colors_dict,normals_dict
+        return pts_dict,colors_dict,normals_dict, masks_dict
 
 
     def get_sparse_pts(self, sample=True, init_mode = None):

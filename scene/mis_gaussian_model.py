@@ -115,7 +115,8 @@ class MisGaussianModel(nn.Module):
                 from scene.tool_model import ToolModel
                 model = ToolModel(model_args = self.cfg.model.gaussian,
                                   obj_meta=None,
-                                  track_id=i)
+                                  track_id=i,
+                                  cfg = self.cfg)
                 setattr(self, model_name, model)
                 self.model_name_id[model_name] = self.models_num
                 self.models_num += 1
@@ -638,7 +639,7 @@ class MisGaussianModel(nn.Module):
                           max_screen_size = None,
                           skip_densify = None,
                           skip_prune = None,
-                        #   percent_big_ws = None,
+                          percent_big_ws = None,
                           ):
         scalars = {}#None
         tensors = {}#None
@@ -646,15 +647,30 @@ class MisGaussianModel(nn.Module):
             if startswith_any(model_name, exclude_list):
                 continue
             # if model_name == 'tissue':
-            model: Union[TissueGaussianModel,GaussianModelBase] = getattr(self, model_name)
-            scalars_, tensors_ = model.densify_and_prune(max_grad = max_grad, 
-                                                         min_opacity = min_opacity, 
-                                                         extent=extent, 
-                                                         max_screen_size=max_screen_size,
-                                                         skip_densify=skip_densify,
-                                                         skip_prune=skip_prune,
-                                                        #  percent_big_ws=percent_big_ws,
-                                                         )
+            model: Union[TissueGaussianModel,ToolModel] = getattr(self, model_name)
+            if isinstance(model,TissueGaussianModel):
+                scalars_, tensors_ = model.densify_and_prune(max_grad = max_grad, 
+                                                            min_opacity = min_opacity, 
+                                                            extent=extent, 
+                                                            max_screen_size=max_screen_size,
+                                                            skip_densify=skip_densify,
+                                                            skip_prune=skip_prune,
+                                                            #  percent_big_ws=percent_big_ws,
+                                                            )
+            elif isinstance(model,ToolModel):
+                scalars_, tensors_ = model.densify_and_prune(max_grad = max_grad, 
+                                                            min_opacity = min_opacity, 
+                                                            extent=extent, 
+                                                            K=torch.Tensor(self.viewpoint_camera.K),
+                                                            init_tool_mask=torch.Tensor(self.metadata['init_mask_dict']['obj_tool1']).unsqueeze(0).to(torch.bool),
+                                                            # init_tool_mask=torch.Tensor(self.viewpoint_camera.tool_mask),
+                                                            # current_tool_mask = torch.Tensor(self.viewpoint_camera.tool_mask),
+                                                            )
+
+            
+ 
+
+
 
             if model_name == 'background':
                 scalars = scalars_
