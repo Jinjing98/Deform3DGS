@@ -35,6 +35,7 @@ class Camera(nn.Module):
         mask = None,
         colmap_id = None,
         uid = None,
+        dataset_name_for_different_z = None,
     ):
         super(Camera, self).__init__()
 
@@ -45,7 +46,7 @@ class Camera(nn.Module):
         self.FoVy = FoVy
         self.image_name = image_name
         self.trans, self.scale = trans, scale
-
+        self.dataset_name_for_different_z = dataset_name_for_different_z
 
         #exlusive to deform3dgs
         self.uid = uid
@@ -88,13 +89,16 @@ class Camera(nn.Module):
             self.zfar = Zfar
             self.znear = Znear
         else:
-            # ENDONERF
-            self.zfar = 120.0
-            self.znear = 0.01
-            
-            # StereoMIS
-            self.zfar = 250
-            self.znear= 0.03
+            if self.dataset_name_for_different_z in ['EndoNeRF']:
+                # ENDONERF
+                self.zfar = 120.0
+                self.znear = 0.01
+            elif self.dataset_name_for_different_z in ['StereoMIS']:
+                # StereoMIS
+                self.zfar = 250
+                self.znear= 0.03
+            else:
+                assert 0 ,self.dataset_name_for_different_z
 
             # streetgs waymo
             # self.zfar = 1000.0

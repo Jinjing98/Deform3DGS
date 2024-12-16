@@ -1,6 +1,12 @@
 ModelParams = dict(
     extra_mark = 'endonerf',
-    camera_extent = 10,
+    # at the core, an extent (capturing-scene-scale) is needed 
+    # for 1)set the spatical_lr_scalre(scene-scale-dependent) 2)(misgsonly) used for prune_big_pts
+    # such value can be approximted by radius of cam_motions(assume cam round the scene to capture)
+    # but at its core, it represent scene scale (gaussians)
+    camera_extent = 0,
+    # camera_extent_tool can be differ in extent, used for prune_big_pts_for_its_own?
+    # camera_extent_tool = 2,
     #to-do:
     #    supprot bash edit
     #    support debug dst opt dur
@@ -45,21 +51,17 @@ OptimizationParams = dict(
     #jj posemodel needed
     # track_position_lr_delay_mult = 0.01
     track_position_lr_init =  0.05, #0.005
-    # track_position_lr_final = 5.0e-5
-    track_position_max_steps = 5000, #30000
-
-    # track_rotation_lr_delay_mult = 0.01
-    # track_rotation_lr_init = 0.001
-    # track_rotation_lr_final = 1.0e-5
-    track_rotation_max_steps = 5000, #30000
+    track_position_max_steps = 1000, #30000
+    track_rotation_lr_init = 0.001,
+    track_rotation_max_steps = 1000, #30000
     track_warmup_steps = 0,
     # track_warmup_steps = 250,
 
 
-    # percent_big_ws = 1000,
     tool_prune_big_points = False,
+    percent_big_ws = 0.1,
     # tool_prune_big_points = True, #used in new_Densify_and_prune_tool: there would be no points
-    densify_grad_threshold_obj = 0.0002#0.0004
+    densify_grad_threshold_obj = 0.0002,#0.0004
 
 )
 

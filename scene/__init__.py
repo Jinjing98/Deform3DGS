@@ -64,9 +64,15 @@ class Scene:
             assert False, "Could not recognize scene type!"
                 
         self.maxtime = scene_info.maxtime
+
         self.cameras_extent = scene_info.nerf_normalization["radius"]
-        # self.cameras_extent = args.camera_extent
-        print("self.cameras_extent is ", self.cameras_extent)
+        self.cameras_extent = 10
+        self.cameras_extent = 0
+        # assert 0,self.cameras_extent
+        self.cameras_extent = args.camera_extent
+        # print("self.cameras_extent is ", self.cameras_extent)
+
+
 
         print("Loading Training Cameras")
         self.train_camera = scene_info.train_cameras 

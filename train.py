@@ -347,7 +347,7 @@ if __name__ == "__main__":
         if hasattr(args,'init_mode'):
             expname_append += f'_{args.init_mode}'
         if use_stree_grouping_strategy:
-            expname_append += f'_{args.track_warmup_steps}'
+            expname_append += f'_{args.track_warmup_steps}_extent{args.camera_extent}'
 
         setattr(args, 'expname', f'{args.expname}{expname_append}')
         

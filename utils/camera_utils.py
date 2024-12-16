@@ -83,6 +83,7 @@ def cameraList_from_camInfos(camera_infos):
                     masks = cam_info.masks,
 
                     metadata=cam_info.metadata,
+                    dataset_name_for_different_z = cam_info.dataset_name_for_different_z,
                     )
 
 

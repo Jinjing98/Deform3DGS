@@ -130,10 +130,11 @@ class OptimizationParams(ParamGroup):
         self.opacity_threshold_fine_init = 0.005
         self.opacity_threshold_fine_after = 0.005
         
-
+        #misgs
         self.track_warmup_steps = 0
         self.tool_prune_big_points = False
         self.densify_grad_threshold_obj = 0.0002
+        self.percent_big_ws = 0.1
         super().__init__(parser, "Optimization Parameters")
 
 def ambigious_search_cfg(args_cmdline):

@@ -70,6 +70,7 @@ class CameraInfo(NamedTuple):
     # metadata: dict = dict()
     mask: np.array = None
     acc_mask: np.array = None
+    dataset_name_for_different_z: str = ''
 
                     # R=R, 
                     # T=T, 

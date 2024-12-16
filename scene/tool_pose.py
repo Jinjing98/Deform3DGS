@@ -29,7 +29,7 @@ class ToolPose(nn.Module):
         self.input_trans = torch.zeros([frames_num,objs_num,3]).float().cuda()
         # upate
         # need good init!
-        x_values = torch.arange(1, frames_num + 1).unsqueeze(1).expand(-1, objs_num) # Shape [frames_num, objs_num]
+        # x_values = torch.arange(1, frames_num + 1).unsqueeze(1).expand(-1, objs_num) # Shape [frames_num, objs_num]
         # self.input_trans[:, :, 0] = -x_values  # Assign to the x-values (index 0)
 
         self.input_rots_rpy = torch.ones([frames_num,objs_num,3]).float().cuda()
