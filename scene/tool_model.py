@@ -525,7 +525,8 @@ class ToolModel:
             self.densify_and_split(grads, max_grad, extent)
         # Prune 
         # no need to reset: stree is redundant procedure
-        if not skip_prune:  
+        if not skip_prune:
+            # prune not need grad  
             self.prune( min_opacity, extent, max_screen_size)
         torch.cuda.empty_cache()
         return {},{}
@@ -540,6 +541,8 @@ class ToolModel:
         current_tool_mask =None,
         K = None,
         box_6d_motion = None, #learned
+        skip_densify = False, 
+        skip_prune = False
         ):
         device_name = self.get_xyz.device
         init_tool_mask = init_tool_mask.to(device_name)#.squeeze(0)
@@ -547,94 +550,90 @@ class ToolModel:
         assert current_tool_mask.shape == init_tool_mask.shape,f'{init_tool_mask.shape}{current_tool_mask.shape}{init_tool_mask.dtype}{current_tool_mask.dtype}'
         assert current_tool_mask.dtype == init_tool_mask.dtype
 
-        max_grad = self.cfg.optim.get('densify_grad_threshold_obj', max_grad)
-        if self.cfg.optim.get('densify_grad_abs_obj', False):
-            grads = self.xyz_gradient_accum[:, 1:2] / self.denom
-        else:
-            grads = self.xyz_gradient_accum[:, 0:1] / self.denom
-        
-        grads[grads.isnan()] = 0.0
+        if not skip_densify:
+            max_grad = self.cfg.optim.get('densify_grad_threshold_obj', max_grad)
+            if self.cfg.optim.get('densify_grad_abs_obj', False):
+                grads = self.xyz_gradient_accum[:, 1:2] / self.denom
+            else:
+                grads = self.xyz_gradient_accum[:, 0:1] / self.denom
+            grads[grads.isnan()] = 0.0
 
-        # Clone and Split
-        # extent = self.get_extent()
-        # extent = self.extent
-
-        print('/////////////////////////////')
-        print(f'debug densify:')
-        print(f'before densify: {self.get_xyz.shape[0]}') 
-        self.densify_and_clone(grads, max_grad, extent)
-        print(f'after_clone: {self.get_xyz.shape[0]}') 
-        self.densify_and_split(grads, max_grad, extent)
-        print(f'after_split: {self.get_xyz.shape[0]}') 
-
-        # Prune points below opacity
-        # min_opacity = -1
-        prune_mask = (self.get_opacity < min_opacity).squeeze()
-        
-        if self.cfg.optim.tool_prune_big_points:
-            # Prune big points in world space
+            # Clone and Split
+            # extent = self.get_extent()
             # extent = self.extent
-            # self.cfg.optim.percent_big_ws = 1000
-            big_points_ws = self.get_scaling.max(dim=1).values > extent * self.cfg.optim.percent_big_ws
-            prune_mask = torch.logical_or(prune_mask, big_points_ws)
 
-        # Prune points outside the tracking box
-        repeat_num = 2
-        # repeat_num = 1
-        stds = self.get_scaling
-        stds = stds[:, None, :].expand(-1, repeat_num, -1) # [N, M, 1] 
-        means = torch.zeros_like(self.get_xyz)
-        means = means[:, None, :].expand(-1, repeat_num, -1) # [N, M, 3]
-        samples = torch.normal(mean=means, std=stds) # [N, M, 3]
-        rots = quaternion_to_matrix(self.get_rotation) # [N, 3, 3]
-        rots = rots[:, None, :, :].expand(-1, repeat_num, -1, -1) # [N, M, 3, 3]
-        origins = self.get_xyz[:, None, :].expand(-1, repeat_num, -1) # [N, M, 3]
-                    
-        samples_xyz = torch.matmul(rots, samples.unsqueeze(-1)).squeeze(-1) + origins # [N, M, 3]                    
-        num_gaussians = self.get_xyz.shape[0]
+            # internally perform grad reset after each step
+            print('/////////////////////////////')
+            print(f'debug densify:')
+            print(f'before densify: {self.get_xyz.shape[0]}') 
+            self.densify_and_clone(grads, max_grad, extent)
+            print(f'after_clone: {self.get_xyz.shape[0]}') 
+            self.densify_and_split(grads, max_grad, extent)
+            print(f'after_split: {self.get_xyz.shape[0]}') 
 
-        #check the init 3d is alwasy within range?
-        points_inside_init_6d_range = torch.logical_and(
-            torch.all((samples_xyz >= self.min_xyz_init.values).view(num_gaussians, -1), dim=-1),
-            torch.all((samples_xyz <= self.max_xyz_init.values).view(num_gaussians, -1), dim=-1),
-        )
-
-        #check the init 2d is alwasy within range?
-        from utils.scene_utils import check_within_2D_mask
-        # tool_mask = torch.logical_or(init_tool_mask,current_tool_mask)
-        tool_mask = init_tool_mask#torch.logical_or(init_tool_mask,current_tool_mask)
-        points_inside_init_2d_range = check_within_2D_mask(samples_xyz_in_cam = samples_xyz[:,0,...],  # we assume the samples_xyz are mostly fixed
-                                                           tool_mask = tool_mask,
-                                                           K = K.to(device_name),
-                                                           num_gaussians = num_gaussians,
-                                                        #    vis_debug=True,
-                                                           vis_debug=False,
-                                                           )
-
-
-        # self.min_xyz_init, self.max_xyz_init
-        points_outside_box = torch.logical_not(points_inside_init_6d_range)           
-        points_outside_mask = torch.logical_not(points_inside_init_2d_range)           
-        # print(f'debug {samples_xyz.shape} {num_gaussians} {(samples_xyz >= self.min_xyz_init.values).shape}\
-                # min/max{self.min_xyz_init.values}/{self.max_xyz_init.values}\
-                    # outliers {points_outside_box.sum()} {prune_mask.sum()}')
-        prune_mask = torch.logical_or(prune_mask, 
-                                      torch.logical_or(
-                                      points_outside_mask,
-                                      points_outside_box,)
-                                      )
-        print('/////////////////////////////')
-        print(f'debug prune:')
-        print(f'current_num: {num_gaussians}') 
-        print(f'6d_will_prune: {points_outside_box.sum()} ')
-        print(f'2d_will_prune:{prune_mask.sum()}')
-        self.prune_points(prune_mask)
-        print(f'after_prune: {self.get_xyz.shape[0]}') 
-        
-        # Reset
-        self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 2), device="cuda")
-        self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
-        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+        if not skip_prune:
+            # Prune points below opacity
+            # min_opacity = -1
+            prune_mask = (self.get_opacity < min_opacity).squeeze()
+            if self.cfg.optim.tool_prune_big_points:
+                # Prune big points in world space
+                # extent = self.extent
+                # self.cfg.optim.percent_big_ws = 1000
+                big_points_ws = self.get_scaling.max(dim=1).values > extent * self.cfg.optim.percent_big_ws
+                prune_mask = torch.logical_or(prune_mask, big_points_ws)
+            # Prune points outside the tracking box
+            # repeat_num = 2
+            repeat_num = 1
+            stds = self.get_scaling
+            stds = stds[:, None, :].expand(-1, repeat_num, -1) # [N, M, 1] 
+            means = torch.zeros_like(self.get_xyz)
+            means = means[:, None, :].expand(-1, repeat_num, -1) # [N, M, 3]
+            samples = torch.normal(mean=means, std=stds) # [N, M, 3]
+            rots = quaternion_to_matrix(self.get_rotation) # [N, 3, 3]
+            rots = rots[:, None, :, :].expand(-1, repeat_num, -1, -1) # [N, M, 3, 3]
+            origins = self.get_xyz[:, None, :].expand(-1, repeat_num, -1) # [N, M, 3]
+                        
+            samples_xyz = torch.matmul(rots, samples.unsqueeze(-1)).squeeze(-1) + origins # [N, M, 3]                    
+            num_gaussians = self.get_xyz.shape[0]
+            #check the init 3d is alwasy within range?
+            points_inside_init_6d_range = torch.logical_and(
+                torch.all((samples_xyz >= self.min_xyz_init.values).view(num_gaussians, -1), dim=-1),
+                torch.all((samples_xyz <= self.max_xyz_init.values).view(num_gaussians, -1), dim=-1),
+            )
+            #check the init 2d is alwasy within range?
+            from utils.scene_utils import check_within_2D_mask
+            # tool_mask = torch.logical_or(init_tool_mask,current_tool_mask)
+            tool_mask = init_tool_mask#torch.logical_or(init_tool_mask,current_tool_mask)
+            points_inside_init_2d_range = check_within_2D_mask(samples_xyz_in_cam = samples_xyz[:,0,...],  # we assume the samples_xyz are mostly fixed
+                                                            tool_mask = tool_mask,
+                                                            K = K.to(device_name),
+                                                            num_gaussians = num_gaussians,
+                                                            vis_debug=True,
+                                                            #    vis_debug=False,
+                                                            )
+            # self.min_xyz_init, self.max_xyz_init
+            points_outside_box = torch.logical_not(points_inside_init_6d_range)           
+            points_outside_mask = torch.logical_not(points_inside_init_2d_range)           
+            # print(f'debug {samples_xyz.shape} {num_gaussians} {(samples_xyz >= self.min_xyz_init.values).shape}\
+                    # min/max{self.min_xyz_init.values}/{self.max_xyz_init.values}\
+                        # outliers {points_outside_box.sum()} {prune_mask.sum()}')
+            prune_mask = torch.logical_or(prune_mask, 
+                                        torch.logical_or(
+                                        points_outside_mask,
+                                        points_outside_box,)
+                                        )
+            print('/////////////////////////////')
+            print(f'debug prune:')
+            print(f'current_num: {num_gaussians}') 
+            print(f'6d_will_prune: {points_outside_box.sum()} ')
+            print(f'2d_will_prune:{prune_mask.sum()}')
+            self.prune_points(prune_mask)
+            print(f'after_prune: {self.get_xyz.shape[0]}') 
+            
+            # Reset
+            self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 2), device="cuda")
+            self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
+            self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
         torch.cuda.empty_cache()
         return {},{}

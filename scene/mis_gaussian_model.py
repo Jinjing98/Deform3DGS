@@ -671,6 +671,8 @@ class MisGaussianModel(nn.Module):
                                                             init_tool_mask=torch.Tensor(self.metadata['init_mask_dict']['obj_tool1']).to(torch.bool),#.unsqueeze(0),
                                                             # init_tool_mask=torch.Tensor(self.viewpoint_camera.tool_mask),
                                                             current_tool_mask = torch.Tensor(self.viewpoint_camera.tool_mask).squeeze(0),
+                                                            skip_densify=skip_densify,
+                                                            skip_prune=skip_prune,                                                            
                                                             )
 
             
