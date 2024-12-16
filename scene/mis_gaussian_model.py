@@ -649,7 +649,11 @@ class MisGaussianModel(nn.Module):
                 continue
             # if model_name == 'tissue':
             model: Union[TissueGaussianModel,ToolModel] = getattr(self, model_name)
-            if isinstance(model,TissueGaussianModel):
+            if isinstance(model,TissueGaussianModel) \
+                    :
+
+                # or isinstance(model,ToolModel)\
+
                 scalars_, tensors_ = model.densify_and_prune(max_grad = max_grad, 
                                                             min_opacity = min_opacity, 
                                                             extent=extent, 
@@ -659,6 +663,7 @@ class MisGaussianModel(nn.Module):
                                                             #  percent_big_ws=percent_big_ws,
                                                             )
             elif isinstance(model,ToolModel):
+                # assert 0, 'debug'
                 scalars_, tensors_ = model.densify_and_prune(max_grad = max_grad, 
                                                             min_opacity = min_opacity, 
                                                             extent=extent, 

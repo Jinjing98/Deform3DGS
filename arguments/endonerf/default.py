@@ -57,8 +57,8 @@ OptimizationParams = dict(
 
 
     # percent_big_ws = 1000,
-    # tool_prune_big_points = False,
-    tool_prune_big_points = True,
+    tool_prune_big_points = False,
+    # tool_prune_big_points = True, #used in new_Densify_and_prune_tool: there would be no points
     densify_grad_threshold_obj = 0.0002#0.0004
 
 )
