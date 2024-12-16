@@ -20,7 +20,7 @@ from random import randint
 from utils.sh_utils import RGB2SH
 from simple_knn._C import distCUDA2
 from utils.graphics_utils import BasicPointCloud
-from utils.general_utils import strip_symmetric, build_scaling_rotation
+from utils.general_utils import strip_symmetric, build_scaling_rotation,quaternion_to_matrix
 from scene.regulation import compute_plane_smoothness
 from typing import Tuple
 
@@ -31,7 +31,8 @@ class ToolModel:
                 #  sh_degree : int, 
                  model_args,
                  track_id = None,
-                 obj_meta = None
+                 obj_meta = None,
+                 cfg = None
                  ):
         
         self.track_id = track_id
@@ -57,6 +58,7 @@ class ToolModel:
         # self.args = args
         # self._deformation_table = torch.empty(0)
 
+        self.cfg = cfg
         self.setup_functions()
            
 
@@ -95,6 +97,13 @@ class ToolModel:
         self._rotation = nn.Parameter(rots.requires_grad_(True))
         self._opacity = nn.Parameter(opacities.requires_grad_(True))
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+        
+        #used for densify
+        # self.min_xyz_init, self.max_xyz_init =  self._xyz.min(dim = 0),self._xyz.max(dim = 0)#-xyz/2., xyz/2.  
+        
+
+        
+        
         # FDM added
         # self._deformation_table = torch.gt(torch.ones((self.get_xyz.shape[0]),device="cuda"),0)
     
@@ -510,7 +519,7 @@ class ToolModel:
         self.prune_points(prune_mask)
         torch.cuda.empty_cache()
 
-    def densify_and_prune(self, max_grad, min_opacity, extent, max_screen_size, 
+    def densify_and_prune_ori(self, max_grad, min_opacity, extent, max_screen_size, 
                           skip_densify = False, skip_prune = False):
         grads = self.xyz_gradient_accum[:, 0:1] / self.denom
         grads[grads.isnan()] = 0.0
@@ -525,6 +534,149 @@ class ToolModel:
         torch.cuda.empty_cache()
         return {},{}
         # return self.scalar_dict, self.tensor_dict
+    
+    
+    
+    
+    def densify_and_prune(self, max_grad, min_opacity,
+        extent,
+        init_tool_mask =None,
+        K = None,
+        ):
+
+        max_grad = self.cfg.optim.get('densify_grad_threshold_obj', max_grad)
+        if self.cfg.optim.get('densify_grad_abs_obj', False):
+            grads = self.xyz_gradient_accum[:, 1:2] / self.denom
+        else:
+            grads = self.xyz_gradient_accum[:, 0:1] / self.denom
+        
+        grads[grads.isnan()] = 0.0
+
+        # Clone and Split
+        # extent = self.get_extent()
+        # extent = self.extent
+        self.densify_and_clone(grads, max_grad, extent)
+        self.densify_and_split(grads, max_grad, extent)
+
+        # Prune points below opacity
+        # min_opacity = -1
+        prune_mask = (self.get_opacity < min_opacity).squeeze()
+        
+        if self.cfg.optim.tool_prune_big_points:
+            # Prune big points in world space
+            # extent = self.extent
+            # self.cfg.optim.percent_big_ws = 1000
+            big_points_ws = self.get_scaling.max(dim=1).values > extent * self.cfg.optim.percent_big_ws
+            prune_mask = torch.logical_or(prune_mask, big_points_ws)
+
+        # Prune points outside the tracking box
+        repeat_num = 2
+        stds = self.get_scaling
+        stds = stds[:, None, :].expand(-1, repeat_num, -1) # [N, M, 1] 
+        means = torch.zeros_like(self.get_xyz)
+        means = means[:, None, :].expand(-1, repeat_num, -1) # [N, M, 3]
+        samples = torch.normal(mean=means, std=stds) # [N, M, 3]
+        rots = quaternion_to_matrix(self.get_rotation) # [N, 3, 3]
+        rots = rots[:, None, :, :].expand(-1, repeat_num, -1, -1) # [N, M, 3, 3]
+        origins = self.get_xyz[:, None, :].expand(-1, repeat_num, -1) # [N, M, 3]
+                    
+        samples_xyz = torch.matmul(rots, samples.unsqueeze(-1)).squeeze(-1) + origins # [N, M, 3]                    
+        num_gaussians = self.get_xyz.shape[0]
+        points_inside_init_6d_range = torch.logical_and(
+            torch.all((samples_xyz >= self.min_xyz_init.values).view(num_gaussians, -1), dim=-1),
+            torch.all((samples_xyz <= self.max_xyz_init.values).view(num_gaussians, -1), dim=-1),
+        )
+
+        #use 2D to constrain?
+        points_inside_init_6d_range = torch.logical_and(
+            torch.all((samples_xyz >= self.min_xyz_init.values).view(num_gaussians, -1), dim=-1),
+            torch.all((samples_xyz <= self.max_xyz_init.values).view(num_gaussians, -1), dim=-1),
+        )
+        def check_within_2D_mask(samples_xyz_in_cam,init_tool_mask,K,num_gaussians):
+            '''
+            samples_xyz: num,3
+            mask: h w
+            k: 3*3
+            notice can only constrian with init_mask, we can only easily get samples_xyz_in_cam for frist frame consideing current implementation
+            '''
+            #project xyz on 2D
+            assert K.dim() == 2,K.dim()
+            assert K.shape[-1] == 3
+            assert samples_xyz_in_cam.dim() == 2
+            proj = (K @ samples_xyz_in_cam.T).T
+            proj_2d = proj[:,:2]/proj[:,2:]
+            proj_2d = proj_2d.to(torch.long)
+            assert proj_2d.dim() == 2
+            assert proj_2d.shape[-1]==2
+            assert init_tool_mask.dim() == 2 ,init_tool_mask.shape
+            assert proj_2d.shape[0] == num_gaussians
+            # Check if points are within bounds of the mask
+            # rows, cols = proj_2d[:, 0], proj_2d[:, 1]
+            cols, rows = proj_2d[:, 0], proj_2d[:, 1]
+            #///////////////////////////
+            vis_debug = False
+            vis_debug = True
+            if vis_debug:
+                import cv2
+                # Convert the binary mask to a uint8 image (required by OpenCV)
+                binary_mask_np = (init_tool_mask.cpu().numpy() * 255).astype(np.uint8)
+                # Convert the binary mask to a BGR image for colored visualization
+                binary_mask_color = cv2.cvtColor(binary_mask_np, cv2.COLOR_GRAY2BGR)
+                # Draw the 2D points on the mask
+                for point in proj_2d:
+                    u, v = int(point[0].item()), int(point[1].item())  # Convert to integer pixel coordinates
+                    # Draw a red circle for each point
+                    cv2.circle(binary_mask_color, (u, v), radius=5, color=(0, 0, 255), thickness=-1)
+                vis_trd = 4 #40000
+                if proj_2d.shape[0]>vis_trd:
+                    # Display the image using OpenCV
+                    cv2.imshow("Projected 2D Points on Binary Mask", binary_mask_color)
+                    cv2.waitKey(1)
+                    if 0xFF == ord('q'):  # You can replace 'q' with any key you want
+                        print("Exiting on key press")
+                        cv2.destroyAllWindows()
+            #/////////////////////////////
+            valid_indices = (rows >= 0) & (rows < init_tool_mask.shape[0]) & \
+                            (cols >= 0) & (cols < init_tool_mask.shape[1])
+            # assert 0,f'{rows}{cols}{init_tool_mask.shape}'
+            # Initialize result tensor (default to True)
+            # points_inside_2D_mask = torch.ones((num_gaussians), dtype=torch.bool).to(samples_xyz_in_cam.device)
+            points_inside_2D_mask = torch.zeros((num_gaussians), dtype=torch.bool).to(samples_xyz_in_cam.device)
+            # Check if valid points are within the mask
+            points_inside_2D_mask[valid_indices] = init_tool_mask[rows[valid_indices], cols[valid_indices]]
+            # print(f'debug  {num_gaussians} {points_inside_2D_mask.sum()} {len(valid_indices)} {cols.max()} {cols.min()} {rows.max()} {rows.min()}' )
+            
+            #debug
+            # points_inside_2D_mask = torch.ones((num_gaussians), dtype=torch.bool).to(samples_xyz_in_cam.device)
+            return points_inside_2D_mask 
+
+        points_inside_init_6d_range = check_within_2D_mask(samples_xyz_in_cam = samples_xyz[:,0,...],  # we assume the samples_xyz are mostly fixed
+                                                           init_tool_mask = init_tool_mask.to(samples_xyz.device).squeeze(0),
+                                                           K = K.to(samples_xyz.device),
+                                                           num_gaussians = num_gaussians)
+
+
+        # self.min_xyz_init, self.max_xyz_init
+        points_outside_box = torch.logical_not(points_inside_init_6d_range)           
+        # print(f'debug {samples_xyz.shape} {num_gaussians} {(samples_xyz >= self.min_xyz_init.values).shape}\
+                # min/max{self.min_xyz_init.values}/{self.max_xyz_init.values}\
+                    # outliers {points_outside_box.sum()} {prune_mask.sum()}')
+        
+        prune_mask = torch.logical_or(prune_mask, points_outside_box)
+            
+        self.prune_points(prune_mask)
+        
+        # Reset
+        self.xyz_gradient_accum = torch.zeros((self.get_xyz.shape[0], 2), device="cuda")
+        self.denom = torch.zeros((self.get_xyz.shape[0], 1), device="cuda")
+        self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+
+        torch.cuda.empty_cache()
+        return {},{}
+        return self.scalar_dict, self.tensor_dict
+    
+
+    
     
     # def standard_constaint(self):
         
