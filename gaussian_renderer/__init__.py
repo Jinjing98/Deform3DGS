@@ -147,6 +147,12 @@ def render_flow(viewpoint_camera, pc : TissueGaussianModel, pipe, bg_color : tor
         cov3D_precomp = cov3D_precomp)
     rendered_image_vis = rendered_image.detach().to('cpu')
     
+    from utils.scene_utils import vis_torch_img
+    vis_img_debug = False
+    vis_img_debug = True
+    if vis_img_debug:
+        vis_torch_img(rendered_image=rendered_image,topic = 'tissue')
+
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
 

@@ -147,3 +147,17 @@ def check_within_2D_mask(samples_xyz_in_cam,tool_mask,K,num_gaussians,
     # debug
     # points_inside_2D_mask = torch.ones((num_gaussians), dtype=torch.bool).to(samples_xyz_in_cam.device)
     return points_inside_2D_mask 
+
+def vis_torch_img(rendered_image,topic = ''):
+    import cv2
+    import numpy as np
+    rendered_image_vis = rendered_image.detach().cpu().permute(1, 2, 0)
+    rendered_image_vis = (rendered_image_vis.numpy()*255).astype(np.uint8)
+    rendered_image_vis = cv2.cvtColor(rendered_image_vis, cv2.COLOR_RGB2BGR)
+    # Display the image using OpenCV
+    print('**************************************************')
+    cv2.imshow(f"{topic}", rendered_image_vis)
+    cv2.waitKey(1)
+    if 0xFF == ord('q'):  # You can replace 'q' with any key you want
+        print("Exiting on key press")
+        cv2.destroyAllWindows()

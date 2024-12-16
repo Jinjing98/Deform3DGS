@@ -96,14 +96,20 @@ def tool_render(viewpoint_camera,
     if debug_getxyz_misgs:
         include_list = list(set(misgs_model.model_name_id.keys()))
         misgs_model.set_visibility(include_list)# set the self.include_list for misgs_model
+        # print('debug hard set')
+        # print('there are issue for endonerf pose---is it okay for train.py naive version, why not get affected?')
+        # viewpoint_camera.ego_pose = torch.eye(4).to(viewpoint_camera.ego_pose.device)
         misgs_model.parse_camera(viewpoint_camera)# set the obj_rots/ graph_obj_list for misgs_model
         # print('debug after obj_trans',misgs_model.obj_trans)
-
+        # print('debug isssue',viewpoint_camera.ego_pose)
         means3D = misgs_model.get_xyz_obj_only
+        # print('debug isssue2',means3D[:5,])
         rotations = misgs_model.get_rotation_obj_only
     else:
         assert 0
-
+    # assert 0
+    # print('op')
+    # print(opacity)
 
     means3D_final = means3D
     rotations_final = rotations
@@ -147,8 +153,28 @@ def tool_render(viewpoint_camera,
         scales = scales_final,
         rotations = rotations_final,
         cov3D_precomp = cov3D_precomp)
-    rendered_image_vis_tool = rendered_image.detach().to('cpu')
+    # rendered_image_vis_tool = rendered_image.detach().to('cpu')
     
+    from utils.scene_utils import vis_torch_img
+    vis_img_debug = False
+    vis_img_debug = True
+    if vis_img_debug:
+        vis_torch_img(rendered_image=rendered_image,topic = 'tool')
+
+        # import cv2
+        # import numpy as np
+        # rendered_image_vis = rendered_image.detach().cpu().permute(1, 2, 0)
+        # rendered_image_vis = (rendered_image_vis.numpy()*255).astype(np.uint8)
+        # rendered_image_vis = cv2.cvtColor(rendered_image_vis, cv2.COLOR_RGB2BGR)
+        # # Display the image using OpenCV
+        # print('**************************************************')
+        # cv2.imshow("vis rendered img", rendered_image_vis)
+        # cv2.waitKey(1)
+        # if 0xFF == ord('q'):  # You can replace 'q' with any key you want
+        #     print("Exiting on key press")
+        #     cv2.destroyAllWindows()
+
+
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
     return {"render": rendered_image,
