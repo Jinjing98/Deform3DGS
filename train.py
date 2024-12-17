@@ -374,7 +374,15 @@ if __name__ == "__main__":
             extra_mark=args.extra_mark,
             args = args)
     else:
+        # save args in model_path for offline rendering
+        # Save the 'args' object to a file
+        # from arguments import save_args
+        # # already done by the author
+        # # cfg_args file
+        # save_args_path =os.path.join(args.model_path,'exp_default.py')
+        # save_args(args, path = save_args_path)        
+        
         from train_utils_misgs import training_misgsmodel
-        training_misgsmodel(args,use_streetgs_render = use_streetgs_render)
+        training_misgsmodel(args, use_streetgs_render = use_streetgs_render)
     # All done
     print("\nTraining complete.", args.model_path)

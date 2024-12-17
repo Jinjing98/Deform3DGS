@@ -100,6 +100,7 @@ class Scene:
     def gs_init(self,gaussians_or_controller : Union[TissueGaussianModel, MisGaussianModel],\
                 load_iteration=None,
                 reset_camera_extent = None,
+                load_which_pcd = 'point_cloud',
                 ):
         # self.loaded_iter = None
         self.gaussians_or_controller = gaussians_or_controller
@@ -113,9 +114,9 @@ class Scene:
             self.gaussians_or_controller.load_ply(os.path.join(self.model_path,
                                                            "point_cloud",
                                                            "iteration_" + str(self.loaded_iter),
-                                                           "point_cloud.ply"))
+                                                           f"{load_which_pcd}.ply"))
             self.gaussians_or_controller.load_model(os.path.join(self.model_path,
-                                                    "point_cloud",
+                                                    f"{load_which_pcd}",
                                                     "iteration_" + str(self.loaded_iter),
                                                    ))
         else:

@@ -281,8 +281,8 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             image_to_show = torch.clamp(image_to_show, 0.0, 1.0)
             os.makedirs(f"{cfg.model_path}/log_images", exist_ok = True)
             # save_img_torch(image_to_show, f"{cfg.model_path}/log_images/{iteration}.jpg")
-            log_img_name = f'it{iteration}_name{viewpoint_cam.image_name}_id{viewpoint_cam.id}_time{viewpoint_cam.time}'
-            log_img_name = f'id{viewpoint_cam.id}_it{iteration}_name{viewpoint_cam.image_name}_time{viewpoint_cam.time}'
+            # log_img_name = f'it{iteration}_name{viewpoint_cam.image_name}_id{viewpoint_cam.id}_time{viewpoint_cam.time}'
+            log_img_name = f'id{viewpoint_cam.id}_it{iteration}_name{viewpoint_cam.image_name}_time{viewpoint_cam.time:.2f}'
             save_img_torch(image_to_show, f"{cfg.model_path}/log_images/{log_img_name}.jpg")
         
         with torch.no_grad():

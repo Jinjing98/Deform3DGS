@@ -21,6 +21,7 @@ from utils.general_utils import safe_state
 from argparse import ArgumentParser
 from arguments import ModelParams, PipelineParams, get_combined_args, FDMHiddenParams
 from scene.flexible_deform_model import TissueGaussianModel
+# from scene.tool_model import ToolModel
 from time import time
 import open3d as o3d
 from utils.graphics_utils import fov2focal
@@ -128,7 +129,10 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
         print('file name:', name)
         reconstruct_point_cloud(render_images, mask_list, render_depths, camera_parameters, name, crop_size)
 
-def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : PipelineParams, skip_train : bool, skip_test : bool, skip_video: bool, reconstruct_train: bool, reconstruct_test: bool, reconstruct_video: bool):
+def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : PipelineParams, 
+                skip_train : bool, skip_test : bool, skip_video: bool, 
+                reconstruct_train: bool, reconstruct_test: bool, reconstruct_video: bool,
+                ):
     with torch.no_grad():
         gaussians = TissueGaussianModel(dataset.sh_degree, hyperparam)
         # scene = Scene(dataset, gaussians, load_iteration=iteration)
@@ -212,6 +216,15 @@ if __name__ == "__main__":
     parser.add_argument("--configs", type=str)
     args = get_combined_args(parser)
     print("Rendering ", args.model_path)
+    # render_misgs = True
+    render_misgs = False
+
+    # exp_time_args_file_name = 'exp_default.py'
+    # if exp_time_args_file_name not in args.configs:
+    #     print('Wrong config, update with exp-time snapshot...')
+    #     args.configs = os.path.join(args.model_path,exp_time_args_file_name)
+    #     assert os.path.exists(args.configs),f'not saved args during traing? {args.configs}'
+
     if args.configs:
         import mmcv
         from utils.params_utils import merge_hparams
@@ -219,7 +232,10 @@ if __name__ == "__main__":
         args = merge_hparams(args, config)
     # Initialize system state (RNG)
     safe_state(args.quiet)
-    render_sets(model.extract(args), hyperparam.extract(args), args.iteration, 
-        pipeline.extract(args), 
-        args.skip_train, args.skip_test, args.skip_video,
-        args.reconstruct_train,args.reconstruct_test,args.reconstruct_video)
+    if not render_misgs:
+        render_sets(model.extract(args), hyperparam.extract(args), args.iteration, 
+            pipeline.extract(args), 
+            args.skip_train, args.skip_test, args.skip_video,
+            args.reconstruct_train,args.reconstruct_test,args.reconstruct_video)
+    else:
+        assert 0
