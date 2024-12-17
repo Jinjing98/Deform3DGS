@@ -3,7 +3,8 @@ from cotracker_utils import load_data_from_video,queries_from_mask,sanity_check_
 import os
 import torch
 import glob
-
+import numpy as np
+from vis_6Dpose_axis import draw_xyz_axis
 
 
 
@@ -45,7 +46,7 @@ if __name__== "__main__":
 
     #//////////////////
     # load data
-    cotracker_video = load_data_from_video(video_path)
+    cotracker_video,frames_cv = load_data_from_video(video_path)
     cotracker_video = cotracker_video.to(device)
     #//////////////////
     # Run Offline CoTracker:
@@ -56,7 +57,7 @@ if __name__== "__main__":
                                                 ) # B T N 2,  B T N 1
     elif use_which in ['query','query_bi']:
         # queries = dummy_queries_from_hard(mask = None, max_num_of_query_pts = None)
-        queries = queries_from_mask(mask_paths, N = query_N, which_mask_img_idx = query_which_mask_img_idx,
+        queries, xy_obj_center_2D = queries_from_mask(mask_paths, N = query_N, which_mask_img_idx = query_which_mask_img_idx,
                                     inverse_mask = inverse_mask,
                                     )
         queries = queries.to(cotracker_video.device)
@@ -80,4 +81,44 @@ if __name__== "__main__":
     # pred_tracks: B frames_num N 2(x,y)  float
     # pred_visibility: B frames_num N     bool
     # perfrom PnP based on 
- 
+
+
+    # [361.2000,  80.1333]
+    #plot axis
+    cx,cy = 283,241
+    fx,fy = 484,484
+    K = np.array([[fx,0, cx],[0, fy, cy],[0, 0, 1]])
+    plot_axis_scale = 0.01 # the unit of axis length was 1m in 3D space--this scalre represent 1cm
+
+  
+
+    images_paths =[ path.replace('masks','images').replace('mask','color')  for path in mask_paths]
+    color_imgs = frames_cv # 11 512 640 3
+
+    pose_base = np.eye(4)
+    # xy_center_2D + depth for the px + k. inverse?
+    xyz_obj_center_3D = np.array([-0.03,0.01,-0.1])
+    poses = []
+    for i,path in enumerate(mask_paths):
+        pose_i = pose_base.copy()
+        pose_i[:3,-1] = np.array([-0.01*i,0.01,-0.1]) #xyz_obj_center_3D
+        # poses = [pose_i for i,path in enumerate(mask_paths)]
+        poses.append(pose_i)
+
+
+    assert len(color_imgs)==len(mask_paths)
+    assert len(poses)==len(mask_paths)
+    assert len(images_paths)==len(mask_paths)
+    
+    # for path in images_paths:
+    for rgb,rgb_img_path,obj_pose in \
+        zip(color_imgs,images_paths,poses):
+
+        assert os.path.exists(rgb_img_path),rgb_img_path
+        # rgb = cv2.imread(rgb_img_path)
+        vis = draw_xyz_axis(rgb[...,::-1], ob_in_cam=obj_pose, 
+                            scale=plot_axis_scale, 
+                            K=K, 
+                            transparency=0, thickness=5)
+        vis = vis[...,::-1]
+

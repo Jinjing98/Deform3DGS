@@ -28,7 +28,7 @@ def load_data_from_video(video_path):
 
     #//////////////////
     cotracker_video = torch.tensor(frames).permute(0, 3, 1, 2)[None].float()  # B T C H W
-    return cotracker_video
+    return cotracker_video,frames
 
 def dummy_queries_from_hard(mask, max_num_of_query_pts):
     #max 
@@ -95,7 +95,8 @@ def queries_from_mask(mask_paths, N, which_mask_img_idx = 0, inverse_mask = Fals
         points = np.array([[which_mask_img_idx, x, y] for x, y in zip(sampled_x, sampled_y)])
     
     points = torch.tensor(points).to(torch.float32)
-    return points#, mask_binary, sampled_x, sampled_y
+    xy_center_2D = torch.mean(points,dim=0)[1:]
+    return points,xy_center_2D#, mask_binary, sampled_x, sampled_y
 
 
 def sanity_check_queries(cotracker_video,queries):
