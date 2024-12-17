@@ -383,7 +383,8 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 print('save state dict in',ckpt_path)
                 torch.save(state_dict, ckpt_path)
 
-from render_misgs import MisGaussianRenderer
+# from render_misgs import MisGaussianRenderer
+from gaussian_renderer.misgs_renderer import MisGaussianRenderer
 def training_report_misgs(tb_writer, 
                           iteration, 
                           scalar_stats, 

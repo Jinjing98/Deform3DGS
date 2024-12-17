@@ -8,7 +8,8 @@ from typing import Union
 
 from utils.camera_utils import Camera
 
-class GaussianRenderer():
+# class GaussianRenderer():
+class MisGaussianRenderer():
     def __init__(
         self,  
         cfg       

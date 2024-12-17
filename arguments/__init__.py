@@ -153,7 +153,9 @@ def ambigious_search_cfg(args_cmdline):
     return matching_dirs[0]
 
 
-def get_combined_args(parser : ArgumentParser):
+# only used for offline rendering
+def get_combined_args(parser : ArgumentParser, 
+                      offline_eval = True):
     cmdlne_string = sys.argv[1:]
     cfgfile_string = "Namespace()"
     args_cmdline = parser.parse_args(cmdlne_string)
@@ -169,6 +171,8 @@ def get_combined_args(parser : ArgumentParser):
             cfgfile_string = cfg_file.read()
     except TypeError:
         print("Config file not found at")
+        if offline_eval:
+            assert 0, f'missing {cfgfilepath} for the exp...'
         pass
     args_cfgfile = eval(cfgfile_string)
 
@@ -182,7 +186,7 @@ def get_combined_args(parser : ArgumentParser):
 def save_args(args, path):
     # import argparse
     import pickle
-    with open('path', 'wb') as f:
+    with open(f'{path}', 'wb') as f:
         pickle.dump(args, f)
     print(f"Arguments saved {path}successfully. used for later rendering!")
     return path
