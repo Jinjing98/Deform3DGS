@@ -2,6 +2,8 @@
 from cotracker_utils import load_data_from_video,queries_from_mask,sanity_check_queries,get_vis_obj,dummy_queries_from_hard
 import os
 import torch
+import glob
+
 
 
 
@@ -10,21 +12,22 @@ if __name__== "__main__":
     # https://colab.research.google.com/github/facebookresearch/co-tracker/blob/master/notebooks
     # /demo.ipynb#scrollTo=fe23d210-ed90-49f1-8311-b7e354c7a9f6
     whichs = ['grid','query','query_bi']
+    
     use_which = 'query' # looks query can already gave accepatable results
-    data_piece = 'P2_7_455_465'
     # use_which = 'query_bi'
+    data_piece = 'P2_7_455_465'
     grid_size = 30 #bigger denser
 
-    query_N = 10
+    # query_gen_from_mask
+    query_N = 15
+    inverse_mask = True
     query_which_mask_img_idx = 0
     query_which_mask_img_idx = 5
-    inverse_mask = True
     BASE_DATASET_PATH="/mnt/cluster/datasets/StereoMIS_processed"
     mask_root=f"{BASE_DATASET_PATH}/{data_piece}/masks"
-    import glob
     mask_paths = glob.glob(mask_root+'/*')
     mask_paths = sorted(mask_paths)
-
+    assert query_which_mask_img_idx <= (len(mask_paths)-1)
 
 
 
@@ -52,17 +55,10 @@ if __name__== "__main__":
                                                 grid_size=grid_size,
                                                 ) # B T N 2,  B T N 1
     elif use_which in ['query','query_bi']:
-        queries = dummy_queries_from_hard(mask = None, max_num_of_query_pts = None)
-
-        # assert 0, queries.dtype
-
-
-        # assert 0, mask_paths
-
+        # queries = dummy_queries_from_hard(mask = None, max_num_of_query_pts = None)
         queries = queries_from_mask(mask_paths, N = query_N, which_mask_img_idx = query_which_mask_img_idx,
                                     inverse_mask = inverse_mask,
                                     )
-        # assert 0, queries
         queries = queries.to(cotracker_video.device)
         sanity_check_queries(cotracker_video,queries)
         pred_tracks, pred_visibility = cotracker(cotracker_video, 
@@ -70,6 +66,9 @@ if __name__== "__main__":
                                                 queries=queries[None])  # B T N 2,  B T N 1
     else:
         assert 0, NotImplementedError
+    # print(pred_tracks)
+    # print(pred_visibility)
+    # print(pred_tracks.shape,pred_visibility.shape)
     # //////////////////////////////////////////////////
     #vis
     vis = get_vis_obj(use_which,co_vid_save_dir)
@@ -78,4 +77,7 @@ if __name__== "__main__":
                   visibility=pred_visibility,
                   filename=co_vid_filename)
 
+    # pred_tracks: B frames_num N 2(x,y)  float
+    # pred_visibility: B frames_num N     bool
+    # perfrom PnP based on 
  

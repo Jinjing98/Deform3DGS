@@ -68,6 +68,8 @@ def queries_from_mask(mask_paths, N, which_mask_img_idx = 0, inverse_mask = Fals
     - sampled_x (list): List of x coordinates of sampled points.
     - sampled_y (list): List of y coordinates of sampled points.
     """
+
+    # todo: support get quries from muti frames; potentially help if pts are tmp out of frames
     assert N>0
     mask_path = mask_paths[which_mask_img_idx]
     # Load the mask image and convert to binary numpy array
@@ -96,54 +98,14 @@ def queries_from_mask(mask_paths, N, which_mask_img_idx = 0, inverse_mask = Fals
     return points#, mask_binary, sampled_x, sampled_y
 
 
-def queries_from_mask_v0(mask_path, max_num_of_query_pts):
-    '''
-    returned queries: N*3 (t x y)
-    '''
-
-
-
-
-
-
-
-    queries = None
-    #max 
-    #t x y
-    queries = torch.tensor([
-        [0., 140., 150.],  # point tracked from the first frame
-        [0., 240., 150.],  # point tracked from the first frame
-        [0., 340., 150.],  # point tracked from the first frame
-        [0., 440., 150.],  # point tracked from the first frame
-        [0., 630., 150.],  # point tracked from the first frame
-        # [5., 260., 500.], # frame number 5
-        [9., 50., 400.], # ...
-        [9., 250., 400.], # ...
-        [9., 550., 400.], # ...
-    ]).cuda()
-    #t x y
-    queries = torch.tensor([
-        [0., 14., 15.],  # point tracked from the first frame
-        [0., 24., 15.],  # point tracked from the first frame
-        [0., 34., 15.],  # point tracked from the first frame
-        [0., 44., 15.],  # point tracked from the first frame
-        [0., 63., 15.],  # point tracked from the first frame
-        # [5., 260., 500.], # frame number 5
-        [9., 5., 40.], # ...
-        [9., 25., 40.], # ...
-        [9., 55., 40.], # ...
-    ]).cuda()
-    assert queries.dim() == 2,queries.shape
-    return queries
-
-
 def sanity_check_queries(cotracker_video,queries):
     #////////////////
     # sanity make sure within frame and time_length
     max_t,max_x,max_y = queries.max(dim=0).values.squeeze(0).squeeze(0)
     min_t,min_x,min_y = queries.min(dim=0).values.squeeze(0).squeeze(0)
-    print('max',queries.max(dim=0))
-    print('min',queries.min(dim=0))
+    print('sanity check.....')
+    print('max in queries',queries.max(dim=0).values)
+    print('min in queries',queries.min(dim=0).values)
     _, total_num_frames, num_c, frame_h, frame_w= cotracker_video.shape
     assert max_t <= total_num_frames-1, max_t
     assert min_t >= 0,min_t
@@ -172,4 +134,3 @@ if __name__== "__main__":
     import os
     import torch
     #test mask
-    queries_from_mask()
