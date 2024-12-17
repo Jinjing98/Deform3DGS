@@ -238,7 +238,10 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         iter_end.record()
         is_save_images = True
         # if is_save_images and (iteration % 1000 == 0):
-        if is_save_images and (iteration % 10 == 0):
+        if is_save_images \
+            and (iteration % 10 == 0)\
+            and iteration > int(0.9*training_args.iterations)\
+                :
             # row0: gt_image, image, depth
             # row1: acc, image_obj, acc_obj
             # depth_colored, _ = visualize_depth_numpy(depth.detach().cpu().numpy().squeeze(0))
