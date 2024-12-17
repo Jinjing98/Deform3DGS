@@ -157,7 +157,7 @@ def tool_render(viewpoint_camera,
     
     from utils.scene_utils import vis_torch_img
     vis_img_debug = False
-    vis_img_debug = True
+    # vis_img_debug = True
     if vis_img_debug:
         vis_torch_img(rendered_image=rendered_image,topic = 'tool')
 

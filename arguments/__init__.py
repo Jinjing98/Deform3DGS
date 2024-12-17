@@ -177,3 +177,12 @@ def get_combined_args(parser : ArgumentParser):
         if v != None:
             merged_dict[k] = v
     return Namespace(**merged_dict)
+
+
+def save_args(args, path):
+    # import argparse
+    import pickle
+    with open('path', 'wb') as f:
+        pickle.dump(args, f)
+    print(f"Arguments saved {path}successfully. used for later rendering!")
+    return path

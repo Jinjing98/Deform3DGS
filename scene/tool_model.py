@@ -100,6 +100,23 @@ class ToolModel:
         
         #used for densify
         self.min_xyz_init, self.max_xyz_init =  self._xyz.min(dim = 0),self._xyz.max(dim = 0)#-xyz/2., xyz/2.  
+
+        def get_center_and_diag(cam_centers):
+            '''
+            reuse the func for computation cam_extent in nerf_normalliazation
+            '''
+            # cam_centers = np.hstack(cam_centers)
+            avg_cam_center = torch.mean(cam_centers, dim=0, keepdims=True)
+            center = avg_cam_center
+            dist = torch.linalg.norm(cam_centers - center, dim=1, keepdims=True)
+            diagonal = torch.max(dist)
+            return center.flatten(), diagonal
+        # tool_extent = max(length*1.5/cfg.data.box_scale, width*1.5/cfg.data.box_scale, height) / 2.
+        _,tool_extent = get_center_and_diag(self._xyz)
+        self.tool_extent = torch.tensor([tool_extent]).float().cuda()   
+        # assert 0,self.tool_extent
+    
+        
         # FDM added
         # self._deformation_table = torch.gt(torch.ones((self.get_xyz.shape[0]),device="cuda"),0)
     
@@ -496,11 +513,11 @@ class ToolModel:
                                    )
 
 
-    def densify(self, max_grad, min_opacity, extent, max_screen_size):
-        grads = self.xyz_gradient_accum / self.denom
-        grads[grads.isnan()] = 0.0
-        self.densify_and_clone(grads, max_grad, extent)
-        self.densify_and_split(grads, max_grad, extent)
+    # def densify(self, max_grad, min_opacity, extent, max_screen_size):
+    #     grads = self.xyz_gradient_accum / self.denom
+    #     grads[grads.isnan()] = 0.0
+    #     self.densify_and_clone(grads, max_grad, extent)
+    #     self.densify_and_split(grads, max_grad, extent)
     
     def prune(self, min_opacity, extent, max_screen_size,
               ):
@@ -550,6 +567,9 @@ class ToolModel:
         assert current_tool_mask.shape == init_tool_mask.shape,f'{init_tool_mask.shape}{current_tool_mask.shape}{init_tool_mask.dtype}{current_tool_mask.dtype}'
         assert current_tool_mask.dtype == init_tool_mask.dtype
 
+        tool_extent = extent # external
+        tool_extent = self.tool_extent #103 SM; were created once inited
+        
         if not skip_densify:
             max_grad = self.cfg.optim.get('densify_grad_threshold_obj', max_grad)
             if self.cfg.optim.get('densify_grad_abs_obj', False):
@@ -559,16 +579,15 @@ class ToolModel:
             grads[grads.isnan()] = 0.0
 
             # Clone and Split
-            # extent = self.get_extent()
-            # extent = self.extent
 
+            print('todo')
             # internally perform grad reset after each step
             print('/////////////////////////////')
             print(f'debug densify:')
             print(f'before densify: {self.get_xyz.shape[0]}') 
-            self.densify_and_clone(grads, max_grad, extent)
+            self.densify_and_clone(grads, max_grad, tool_extent)
             print(f'after_clone: {self.get_xyz.shape[0]}') 
-            self.densify_and_split(grads, max_grad, extent)
+            self.densify_and_split(grads, max_grad, tool_extent)
             print(f'after_split: {self.get_xyz.shape[0]}') 
 
         if not skip_prune:
@@ -579,8 +598,12 @@ class ToolModel:
                 # Prune big points in world space
                 # extent = self.extent
                 # self.cfg.optim.percent_big_ws = 1000
-                big_points_ws = self.get_scaling.max(dim=1).values > extent * self.cfg.optim.percent_big_ws
+                print(f'debug prune_big:')
+                print(f'current_num: {self.get_xyz.shape[0]}') 
+                big_points_ws = self.get_scaling.max(dim=1).values > tool_extent * self.cfg.optim.percent_big_ws
                 prune_mask = torch.logical_or(prune_mask, big_points_ws)
+                print(f'big_ws_will_prune:{prune_mask.sum()}')
+
             # Prune points outside the tracking box
             # repeat_num = 2
             repeat_num = 1
@@ -622,7 +645,7 @@ class ToolModel:
                                         points_outside_mask,
                                         points_outside_box,)
                                         )
-            print('/////////////////////////////')
+            # print('/////////////////////////////')
             print(f'debug prune:')
             print(f'current_num: {num_gaussians}') 
             print(f'6d_will_prune: {points_outside_box.sum()} ')
