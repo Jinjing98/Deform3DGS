@@ -5,6 +5,10 @@ import torch
 import glob
 import numpy as np
 from vis_6Dpose_axis import draw_xyz_axis
+from PIL import Image
+from vis_6Dpose_axis import vis_6dpose_axis
+ 
+
 
 
 
@@ -17,10 +21,17 @@ if __name__== "__main__":
     use_which = 'query' # looks query can already gave accepatable results
     # use_which = 'query_bi'
     data_piece = 'P2_7_455_465'
+    exp_name = '12-17_09-53-45_use_skipMAPF_0_extent10_SHORT'
+    # data_piece = 'P2_7_1653_1678'
+    # exp_name = '12-17_14-13-28_use_skipMAPF_0_extent10'
+    # data_piece = 'P2_7_1279_1289'
+    # exp_name = '12-17_14-15-51_use_skipMAPF_0_extent10'
+
+
     grid_size = 30 #bigger denser
 
     # query_gen_from_mask
-    query_N = 15
+    query_N = 1000
     inverse_mask = True
     query_which_mask_img_idx = 0
     query_which_mask_img_idx = 5
@@ -30,12 +41,13 @@ if __name__== "__main__":
     mask_paths = sorted(mask_paths)
     assert query_which_mask_img_idx <= (len(mask_paths)-1)
 
-
+    #pnp param
+    refine_LM = False
 
     backward_tracking=True if 'bi' in use_which else False
     #//////////////////
     video_path_root = '/mnt/ceph/tco/TCO-Staff/Homes/jinjing/'
-    video_path = video_path_root+f'/exps/train/gs/SM/{data_piece}/deform3dgs_jj/12-17_09-53-45_use_skipMAPF_0_extent10_SHORT/video/ours_3000/gt_video.mp4'
+    video_path = video_path_root+f'/exps/train/gs/SM/{data_piece}/deform3dgs_jj/{exp_name}/video/ours_3000/gt_video.mp4'
     # video_path = os.path.dirname(video_path)+'/P2_4_idx528_553_id1057_1107_f26.mp4'
     co_vid_save_dir=f"{os.path.dirname(video_path)}/cotracker_videos"
     os.makedirs(co_vid_save_dir,exist_ok=True)
@@ -67,58 +79,61 @@ if __name__== "__main__":
                                                 queries=queries[None])  # B T N 2,  B T N 1
     else:
         assert 0, NotImplementedError
-    # print(pred_tracks)
-    # print(pred_visibility)
-    # print(pred_tracks.shape,pred_visibility.shape)
     # //////////////////////////////////////////////////
-    #vis
+    #vis--vis cotrakcer opts results
     vis = get_vis_obj(use_which,co_vid_save_dir)
     vis.visualize(cotracker_video, 
                   tracks=pred_tracks, 
                   visibility=pred_visibility,
                   filename=co_vid_filename)
 
-    # pred_tracks: B frames_num N 2(x,y)  float
-    # pred_visibility: B frames_num N     bool
-    # perfrom PnP based on 
+    # used for both pnp and axis_plot
+    K = np.array([[560.0158,   0.  ,    320.     ],
+                    [  0.   ,   560.01587, 256.     ],
+                    [  0.   ,    0.  ,      1.     ]] )
+    #/////////////////////////////////////
+    # pred_tracks: B*frames_num*pts_num_N*2    2 refer to (x,y) for 2D keypoints  float
+    # pred_visibility: B*frames_num*pts_num_N     bool
+    # perfrom PnP for each pair of continous frames based on pred_tracks,pred_visibility, K
+    from pnp_based_on_cotracker_opts import perform_pnp
+    _, frames_num, pts_num_N,_ = pred_tracks.shape
+    H, W = 512, 640 #480, 640
+    depths = np.random.uniform(0.1, 10.0, size=(frames_num, H, W))
+    depth_paths = [ mask_path.replace('masks','depth').replace('mask','depth') for mask_path in mask_paths]
+    depths = [np.array(Image.open(depth_path)) for depth_path in depth_paths] #unit mm?
+    depths = np.stack(depths,axis=0)
+    # assert 0,f'{depths}{depths.shape} {pred_tracks} {pred_tracks.shape} {pred_visibility} {pred_visibility.dtype} {pred_visibility.shape}'
 
+    # Perform PnP
+    pred_tracks = pred_tracks.squeeze(0).detach().cpu().numpy()
+    pred_visibility = pred_visibility.squeeze(0).detach().cpu().numpy()
+    poses_mat,poses_Rt = perform_pnp(pred_tracks, pred_visibility, K, depths,refine_LM = refine_LM)
+    # Print results
+    for i, (R, t) in enumerate(poses_Rt):
+        print(f"Frame Pair {i}-{i+1}:")
+        if R is not None and t is not None:
+            print("Rotation Matrix:\n", R)
+            print("Translation Vector:\n", t.ravel())
+        else:
+            print("No valid PnP solution.")
+    # convert poses tp mat
+    #/////////////////////////////////////////////////////////////////
+    #2D CENTER [361.2000,  80.1333]
+    # plot axis--debug poses usage
+    # pose_base_anchor
+    init_axis_anchor_which_mask_img_idx = 0
 
-    # [361.2000,  80.1333]
-    #plot axis
-    cx,cy = 283,241
-    fx,fy = 484,484
-    K = np.array([[fx,0, cx],[0, fy, cy],[0, 0, 1]])
-    plot_axis_scale = 0.01 # the unit of axis length was 1m in 3D space--this scalre represent 1cm
-
-  
-
-    images_paths =[ path.replace('masks','images').replace('mask','color')  for path in mask_paths]
-    color_imgs = frames_cv # 11 512 640 3
-
-    pose_base = np.eye(4)
-    # xy_center_2D + depth for the px + k. inverse?
-    xyz_obj_center_3D = np.array([-0.03,0.01,-0.1])
-    poses = []
-    for i,path in enumerate(mask_paths):
-        pose_i = pose_base.copy()
-        pose_i[:3,-1] = np.array([-0.01*i,0.01,-0.1]) #xyz_obj_center_3D
-        # poses = [pose_i for i,path in enumerate(mask_paths)]
-        poses.append(pose_i)
-
-
-    assert len(color_imgs)==len(mask_paths)
-    assert len(poses)==len(mask_paths)
-    assert len(images_paths)==len(mask_paths)
-    
-    # for path in images_paths:
-    for rgb,rgb_img_path,obj_pose in \
-        zip(color_imgs,images_paths,poses):
-
-        assert os.path.exists(rgb_img_path),rgb_img_path
-        # rgb = cv2.imread(rgb_img_path)
-        vis = draw_xyz_axis(rgb[...,::-1], ob_in_cam=obj_pose, 
-                            scale=plot_axis_scale, 
-                            K=K, 
-                            transparency=0, thickness=5)
-        vis = vis[...,::-1]
-
+    # video_path = video_path_root+f'/exps/train/gs/SM/{data_piece}/deform3dgs_jj/12-17_09-53-45_use_skipMAPF_0_extent10_SHORT/video/ours_3000/gt_video.mp4'
+    axis_save_dir = video_path.split('video')[0]
+    axis_save_dir = os.path.join(axis_save_dir,'axis_vis')
+    os.makedirs(axis_save_dir,exist_ok=True)
+    vis_6dpose_axis(mask_paths = mask_paths,
+                            init_axis_anchor_which_mask_img_idx =init_axis_anchor_which_mask_img_idx,
+                            color_imgs = frames_cv,
+                            K = K,
+                            inverse_mask = inverse_mask,
+                            # CamprvtoCamcurrent_all = None,
+                            CamprvtoCamcurrent_all = poses_mat,
+                            # axis_save_dir = None,
+                            axis_save_dir = axis_save_dir,
+                            )
