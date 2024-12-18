@@ -56,6 +56,18 @@ if __name__== "__main__":
     if 'query' in use_which:
         co_vid_filename += f'_maskIDX{query_which_mask_img_idx}N{query_N}'
 
+    # used for both pnp and axis_plot
+    K = np.array([[560.0158,   0.  ,    320.     ],
+                    [  0.   ,   560.01587, 256.     ],
+                    [  0.   ,    0.  ,      1.     ]] )
+
+    # plot axis--debug poses usage
+    # pose_base_anchor
+    init_axis_anchor_which_mask_img_idx = 0
+    # video_path = video_path_root+f'/exps/train/gs/SM/{data_piece}/deform3dgs_jj/12-17_09-53-45_use_skipMAPF_0_extent10_SHORT/video/ours_3000/gt_video.mp4'
+    axis_save_dir = video_path.split('video')[0]
+    axis_save_dir = os.path.join(axis_save_dir,'axis_vis')
+
     #//////////////////
     # load data
     cotracker_video,frames_cv = load_data_from_video(video_path)
@@ -87,18 +99,13 @@ if __name__== "__main__":
                   visibility=pred_visibility,
                   filename=co_vid_filename)
 
-    # used for both pnp and axis_plot
-    K = np.array([[560.0158,   0.  ,    320.     ],
-                    [  0.   ,   560.01587, 256.     ],
-                    [  0.   ,    0.  ,      1.     ]] )
+
     #/////////////////////////////////////
     # pred_tracks: B*frames_num*pts_num_N*2    2 refer to (x,y) for 2D keypoints  float
     # pred_visibility: B*frames_num*pts_num_N     bool
     # perfrom PnP for each pair of continous frames based on pred_tracks,pred_visibility, K
     from pnp_based_on_cotracker_opts import perform_pnp
     _, frames_num, pts_num_N,_ = pred_tracks.shape
-    H, W = 512, 640 #480, 640
-    depths = np.random.uniform(0.1, 10.0, size=(frames_num, H, W))
     depth_paths = [ mask_path.replace('masks','depth').replace('mask','depth') for mask_path in mask_paths]
     depths = [np.array(Image.open(depth_path)) for depth_path in depth_paths] #unit mm?
     depths = np.stack(depths,axis=0)
@@ -120,12 +127,6 @@ if __name__== "__main__":
     #/////////////////////////////////////////////////////////////////
     #2D CENTER [361.2000,  80.1333]
     # plot axis--debug poses usage
-    # pose_base_anchor
-    init_axis_anchor_which_mask_img_idx = 0
-
-    # video_path = video_path_root+f'/exps/train/gs/SM/{data_piece}/deform3dgs_jj/12-17_09-53-45_use_skipMAPF_0_extent10_SHORT/video/ours_3000/gt_video.mp4'
-    axis_save_dir = video_path.split('video')[0]
-    axis_save_dir = os.path.join(axis_save_dir,'axis_vis')
     os.makedirs(axis_save_dir,exist_ok=True)
     vis_6dpose_axis(mask_paths = mask_paths,
                             init_axis_anchor_which_mask_img_idx =init_axis_anchor_which_mask_img_idx,
