@@ -61,6 +61,7 @@ class ModelParams(ParamGroup):
         #extend
         self.tool_mask = None
         self.init_mode = None
+        self.load_cotrackerPnpPose = False
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
@@ -135,6 +136,9 @@ class OptimizationParams(ParamGroup):
         self.tool_prune_big_points = False
         self.densify_grad_threshold_obj = 0.0002
         self.percent_big_ws = 0.1
+        self.obj_pose_init = '0'
+        self.obj_pose_rot_optim_space = 'rpy', #'lie'
+
         super().__init__(parser, "Optimization Parameters")
 
 def ambigious_search_cfg(args_cmdline):

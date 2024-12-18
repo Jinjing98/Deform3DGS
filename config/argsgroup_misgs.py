@@ -189,6 +189,9 @@ class OptParams(ParamGroup_stree):
         #tool
         self.tool_prune_big_points = True
         self.track_warmup_steps = 0
+        self.obj_pose_init = '0'
+        self.obj_pose_rot_optim_space = 'rpy', #'lie'
+
         # self.densify_grad_threshold_obj = 0.0002
 
         # self.iterations = 30000
@@ -262,6 +265,8 @@ class ModParams(ParamGroup_stree):
         self.extra_mark = None
 
         self.camera_extent = None
+
+        self.load_cotrackerPnpPose = False
 
         super().__init__(parser, "Model Parameters")
  

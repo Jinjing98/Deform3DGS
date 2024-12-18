@@ -25,14 +25,19 @@ class ToolPose(nn.Module):
         self.timestamps = self.camera_timestamps[str(cam_id)]['all_timestamps']
         # we predict abs pose
         frames_num = len(self.timestamps)
-        self.input_trans = torch.ones([frames_num,objs_num,3]).float().cuda()
-        self.input_trans = torch.zeros([frames_num,objs_num,3]).float().cuda()
-        # upate
-        # need good init!
-        # x_values = torch.arange(1, frames_num + 1).unsqueeze(1).expand(-1, objs_num) # Shape [frames_num, objs_num]
-        # self.input_trans[:, :, 0] = -x_values  # Assign to the x-values (index 0)
-
-        self.input_rots_rpy = torch.ones([frames_num,objs_num,3]).float().cuda()
+        # obj_pose_rot_optim_space = 'rpy', #'lie'
+        if self.cfg_optim.obj_pose_init == '0':
+            self.input_trans = torch.zeros([frames_num,objs_num,3]).float().cuda()
+            self.input_rots_rpy = torch.zeros([frames_num,objs_num,3]).float().cuda()
+        elif self.cfg_optim.obj_pose_init == 'cotrackerpnp':
+            assert self.cfg.model.load_cotrackerPnpPose
+            self.input_trans = torch.zeros([frames_num,objs_num,3]).float().cuda()
+            self.input_rots_rpy = torch.zeros([frames_num,objs_num,3]).float().cuda()
+            x_values = torch.arange(1, frames_num + 1).unsqueeze(1).expand(-1, objs_num) # Shape [frames_num, objs_num]
+            self.input_trans[:, :, 0] = -x_values  # Assign to the x-values (index 0)
+        else:
+            assert 0,  self.cfg_optim.obj_pose_init
+        # self.input_rots_rpy = torch.ones([frames_num,objs_num,3]).float().cuda()
         self.input_rots_rpy = torch.zeros([frames_num,objs_num,3]).float().cuda()
         assert objs_num == 1,objs_num
 

@@ -14,6 +14,8 @@ ModelParams = dict(
     #    support hard changes iters
     init_mode = 'skipMAPF',#'MAPF', #'skipMAPF' #rand
     tool_mask = 'use', #'use'(default) 'inverse' 'nouse'
+    load_cotrackerPnpPose = False,
+
 )
 
 #to do 
@@ -57,6 +59,8 @@ OptimizationParams = dict(
     # track_warmup_steps = 250,
 
     # used in misgs
+    obj_pose_init = '0', #'cotrackerpnp'
+    obj_pose_rot_optim_space = 'rpy', #'lie'
     percent_dense = 0.01,
     # tool_prune_big_points = False,
     tool_prune_big_points = True,

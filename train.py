@@ -347,7 +347,8 @@ if __name__ == "__main__":
         if hasattr(args,'init_mode'):
             expname_append += f'_{args.init_mode}'
         if use_stree_grouping_strategy:
-            expname_append += f'_{args.track_warmup_steps}_extent{args.camera_extent}'
+            #pose related setting
+            expname_append += f'_{args.track_warmup_steps}_extent{args.camera_extent}_space{args.obj_pose_rot_optim_space}_{args.obj_pose_init}init'
 
         setattr(args, 'expname', f'{args.expname}{expname_append}')
         
@@ -382,6 +383,14 @@ if __name__ == "__main__":
         # save_args_path =os.path.join(args.model_path,'exp_default.py')
         # save_args(args, path = save_args_path)        
         
+        #sanity
+        assert args.obj_pose_init in ['0','cotrackerpnp']
+        assert args.obj_pose_rot_optim_space in ['rpy','lie']
+        if args.obj_pose_init in ['cotrackerpnp']:
+            assert args.load_cotrackerPnpPose
+
+
+
         from train_utils_misgs import training_misgsmodel
         training_misgsmodel(args, use_streetgs_render = use_streetgs_render)
     # All done
