@@ -54,6 +54,7 @@ class DepthEstimator(torch.nn.Module):
         self.model.load_state_dict(new_state_dict)
         
     def forward(self, imagel, imager, baseline, upsample=True):
+        print('the saved depth values are in mm unit')
         n, _, h, w = imagel.shape
         flow = self.model(imagel.to('cuda'), imager.to('cuda'), upsample=upsample)[0][-1]
         baseline = torch.from_numpy(baseline).to('cuda')

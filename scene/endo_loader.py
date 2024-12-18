@@ -569,6 +569,7 @@ class EndoNeRF_Dataset(object):
         cy = self.K[1,-1]
         X_Z = (i-cx) / self.focal[0]
         Y_Z = (j-cy) / self.focal[1]
+        # assert 0,f'{self.K} {self.focal}'
         Z = depth
         X, Y = X_Z * Z, Y_Z * Z
         pts_cam = np.stack((X, Y, Z), axis=-1).reshape(-1, 3)
