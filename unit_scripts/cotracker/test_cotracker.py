@@ -20,12 +20,22 @@ if __name__== "__main__":
     
     use_which = 'query' # looks query can already gave accepatable results
     # use_which = 'query_bi'
+    backward_tracking=True if 'bi' in use_which else False
+
     data_piece = 'P2_7_455_465'
     exp_name = '12-17_09-53-45_use_skipMAPF_0_extent10_SHORT'
+
+
+    # data_piece = 'P2_7_455_480'
+    # exp_name = '12-17_14-03-39_use_skipMAPF_0_extent10'
+    # data_piece = 'P2_7_1264_1289'
+    # exp_name = '12-17_14-06-08_use_skipMAPF_0_extent10'
+    # # data_piece = 'P2_7_1279_1289'
+    # # exp_name = '12-17_14-15-51_use_skipMAPF_0_extent10'
+
+    # #<4 pts
     # data_piece = 'P2_7_1653_1678'
     # exp_name = '12-17_14-13-28_use_skipMAPF_0_extent10'
-    # data_piece = 'P2_7_1279_1289'
-    # exp_name = '12-17_14-15-51_use_skipMAPF_0_extent10'
 
 
     grid_size = 30 #bigger denser
@@ -33,8 +43,8 @@ if __name__== "__main__":
     # query_gen_from_mask
     query_N = 1000
     inverse_mask = True
+    query_which_mask_img_idx = 5 #ideally should be 1st frame is not using queire_bis
     query_which_mask_img_idx = 0
-    query_which_mask_img_idx = 5
     BASE_DATASET_PATH="/mnt/cluster/datasets/StereoMIS_processed"
     mask_root=f"{BASE_DATASET_PATH}/{data_piece}/masks"
     mask_paths = glob.glob(mask_root+'/*')
@@ -43,8 +53,18 @@ if __name__== "__main__":
 
     #pnp param
     refine_LM = False
+    save_pnp_poses = True
+    mask_name_for_queries_gen = mask_paths[query_which_mask_img_idx]
+    mask_name_for_queries_gen = os.path.basename(mask_name_for_queries_gen).split('.')[0]
+    pnp_poses_partname_co = f'CoTracer_{use_which}_queryGenMask{mask_name_for_queries_gen}_ptsN{query_N}' if 'query' in use_which \
+        else f'CoTracer_{use_which}_{grid_size}'
+    pnp_poses_partname_pnp = f'PnP_LMrf{int(refine_LM)}' 
+    save_pnp_poses_root = os.path.dirname(mask_root)
+    save_pnp_poses_path = f'{save_pnp_poses_root}/ObjPoses_rel_{pnp_poses_partname_co}_{pnp_poses_partname_pnp}.pt'
 
-    backward_tracking=True if 'bi' in use_which else False
+    # if 'query' in use_which \
+    
+
     #//////////////////
     video_path_root = '/mnt/ceph/tco/TCO-Staff/Homes/jinjing/'
     video_path = video_path_root+f'/exps/train/gs/SM/{data_piece}/deform3dgs_jj/{exp_name}/video/ours_3000/gt_video.mp4'
@@ -115,6 +135,16 @@ if __name__== "__main__":
     pred_tracks = pred_tracks.squeeze(0).detach().cpu().numpy()
     pred_visibility = pred_visibility.squeeze(0).detach().cpu().numpy()
     poses_mat,poses_Rt = perform_pnp(pred_tracks, pred_visibility, K, depths,refine_LM = refine_LM)
+    
+    
+    if save_pnp_poses:
+        # assert 0, f' {poses_Rt} {poses_Rt[0]}'
+        poses_Rt_torch_tensors = [torch.tensor([t[i] for t in poses_Rt]) for i in range(len(poses_Rt[0]))]
+        torch.save({'poses_mat': torch.Tensor(np.stack(poses_mat)), 
+                    'poses_Rt': poses_Rt_torch_tensors,
+                    }, save_pnp_poses_path)
+    
+    
     # Print results
     for i, (R, t) in enumerate(poses_Rt):
         print(f"Frame Pair {i}-{i+1}:")
