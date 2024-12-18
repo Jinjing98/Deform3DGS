@@ -137,7 +137,9 @@ class OptimizationParams(ParamGroup):
         self.densify_grad_threshold_obj = 0.0002
         self.percent_big_ws = 0.1
         self.obj_pose_init = '0'
-        self.obj_pose_rot_optim_space = 'rpy', #'lie'
+        self.obj_pose_rot_optim_space = 'rpy' #'lie'
+
+        self._disable_tb = 'N'#such manner support change the args from terminal input
 
         super().__init__(parser, "Optimization Parameters")
 
@@ -168,8 +170,6 @@ def get_combined_args(parser : ArgumentParser,
         args_cmdline.model_path = ambigious_search_cfg(args_cmdline)#matching_dirs[0]
         cfgfilepath = os.path.join(args_cmdline.model_path, "cfg_args")
         print("Looking for config file in", cfgfilepath)
-
-
         with open(cfgfilepath) as cfg_file:
             print("Config file found: {}".format(cfgfilepath))
             cfgfile_string = cfg_file.read()

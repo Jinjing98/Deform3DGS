@@ -258,7 +258,10 @@ def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, c
                          checkpoint_iterations, checkpoint, debug_from,
                          gaussians, scene, tb_writer, opt.iterations,timer)
 
-def prepare_output_and_logger(model_path,write_args = None):    
+def prepare_output_and_logger(model_path,write_args = None):  
+    if write_args.disable_tb=='Y':
+        return None
+
     if not model_path:
         assert 0, model_path
     print("Output folder: {}".format(model_path))
@@ -334,6 +337,7 @@ if __name__ == "__main__":
     parser.add_argument("--start_checkpoint", type=str, default = None)
     parser.add_argument("--expname", type=str, default = "endonerf/pulling_fdm")
     parser.add_argument("--configs", type=str, default = "arguments/endonerf/default.py")
+
     args = parser.parse_args(sys.argv[1:])
     if args.configs:
         import mmcv
@@ -349,6 +353,11 @@ if __name__ == "__main__":
         if use_stree_grouping_strategy:
             #pose related setting
             expname_append += f'_{args.track_warmup_steps}_extent{args.camera_extent}_space{args.obj_pose_rot_optim_space}_{args.obj_pose_init}init'
+
+
+        assert args.disable_tb in ['Y','N']
+        if args.disable_tb == 'Y':
+            expname_append += '_NOTB'
 
         setattr(args, 'expname', f'{args.expname}{expname_append}')
         

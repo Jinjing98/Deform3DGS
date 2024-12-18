@@ -631,8 +631,8 @@ class ToolModel:
                                                             tool_mask = tool_mask,
                                                             K = K.to(device_name),
                                                             num_gaussians = num_gaussians,
-                                                            vis_debug=True,
-                                                            #    vis_debug=False,
+                                                            # vis_debug=True,
+                                                               vis_debug=False,
                                                             )
             # self.min_xyz_init, self.max_xyz_init
             points_outside_box = torch.logical_not(points_inside_init_6d_range)           

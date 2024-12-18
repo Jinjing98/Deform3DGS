@@ -190,7 +190,8 @@ class OptParams(ParamGroup_stree):
         self.tool_prune_big_points = True
         self.track_warmup_steps = 0
         self.obj_pose_init = '0'
-        self.obj_pose_rot_optim_space = 'rpy', #'lie'
+        self.obj_pose_rot_optim_space = 'rpy' #'lie'
+        self._disable_tb = 'N'#False
 
         # self.densify_grad_threshold_obj = 0.0002
 
