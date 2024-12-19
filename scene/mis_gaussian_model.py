@@ -567,8 +567,52 @@ class MisGaussianModel(nn.Module):
     #             model.max_radii2D[visibility_model], max_radii2D_model[visibility_model])
         
     
+#     {}
     
-    def set_max_radii2D_all_models(self, radiis = [], visibility_filters = [],model_names = []):
+    def set_max_radii2D_all_models(self, radiis = {}, visibility_filters = {},model_names = []):
+        '''
+        already internnallly performed by the densify and prune of tissue model
+        '''
+
+        assert len(radiis.keys()) == len(visibility_filters.keys())
+        assert len(radiis.keys()) == len(model_names),f'{len(radiis.keys())}{len(model_names)} {radiis.keys()}{model_names}'
+
+#        for radii, visibility_filter, model_name in zip(radiis,visibility_filters,model_names):
+        for model_name in model_names:
+            visibility_filter = visibility_filters[model_name]
+            radii = radiis[model_name]
+            radii = radii.float()
+            model: GaussianModelBase = getattr(self, model_name)
+            model.max_radii2D[visibility_filter] = torch.max(
+                model.max_radii2D[visibility_filter], radii[visibility_filter])
+        
+    
+    def add_densification_stats_all_models(self, viewspace_point_tensors= {}, visibility_filters= {}, model_names = []):
+        '''
+        already internnallly performed by the densify and prune of tissue model
+        '''
+
+        assert len(viewspace_point_tensors.keys()) == len(visibility_filters.keys())
+        assert len(visibility_filters.keys()) == len(model_names)
+
+#        for viewspace_point_tensor, visibility_filter, model_name in zip(viewspace_point_tensors,visibility_filters,model_names):
+
+        for model_name in model_names:
+            visibility_filter = visibility_filters[model_name]
+            viewspace_point_tensor = viewspace_point_tensors[model_name]
+
+        #for viewspace_point_tensor, visibility_filter, model_name in zip(viewspace_point_tensors,visibility_filters,model_names):
+            # assert 0,'not checked'
+            viewspace_point_tensor_grad = viewspace_point_tensor.grad
+            model: GaussianModelBase = getattr(self, model_name)
+            model.xyz_gradient_accum[visibility_filter, 0:1] += torch.norm(viewspace_point_tensor_grad[visibility_filter, :2], dim=-1, keepdim=True)
+            model.xyz_gradient_accum[visibility_filter, 1:2] += torch.norm(viewspace_point_tensor_grad[visibility_filter, 2:], dim=-1, keepdim=True)
+            model.denom[visibility_filter] += 1
+
+
+
+    
+    def set_max_radii2D_all_models_v0(self, radiis = [], visibility_filters = [],model_names = []):
         '''
         already internnallly performed by the densify and prune of tissue model
         '''
@@ -602,7 +646,7 @@ class MisGaussianModel(nn.Module):
     #         model.xyz_gradient_accum[visibility_model, 1:2] += torch.norm(viewspace_point_tensor_grad_model[visibility_model, 2:], dim=-1, keepdim=True)
     #         model.denom[visibility_model] += 1
 
-    def add_densification_stats_all_models(self, viewspace_point_tensors, visibility_filters, model_names):
+    def add_densification_stats_all_models_v0(self, viewspace_point_tensors, visibility_filters, model_names):
         '''
         already internnallly performed by the densify and prune of tissue model
         '''
