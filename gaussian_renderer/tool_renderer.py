@@ -32,14 +32,6 @@ def tool_render(viewpoint_camera,
     Background tensor (bg_color) must be on GPU!
     """
  
-    # # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
-    # screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
-    # try:
-    #     screenspace_points.retain_grad()
-    # except:
-    #     pass
-
-    #code from deform gs : jinjing
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
     screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
     # screenspace_points_densify = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
@@ -51,10 +43,8 @@ def tool_render(viewpoint_camera,
 
 
     # Set up rasterization configuration
-    
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
-        
     raster_settings = GaussianRasterizationSettings(
         image_height=int(viewpoint_camera.image_height),
         image_width=int(viewpoint_camera.image_width),
@@ -69,15 +59,12 @@ def tool_render(viewpoint_camera,
         prefiltered=False,
         debug=pipe.debug
     )
-
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
     means2D = screenspace_points
     opacity = pc._opacity
-
     # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
     # scaling / rotation by the rasterizer.
-
     if pipe.compute_cov3D_python:
         assert 0
         # scales = None

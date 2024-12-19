@@ -16,6 +16,51 @@ from scene.flexible_deform_model import TissueGaussianModel
 from scene.tool_model import ToolModel
 from utils.sh_utils import eval_sh
 from typing import Union
+
+def get_final_attr_tissue(pc,viewpoint_camera_time, initial_scales,initial_opacity):
+    #udpate means_3d(xyz) and rotations + other attri based on FDM
+    scales = initial_scales
+    opacity = initial_opacity
+    means3D = pc.get_xyz
+    rotations = pc._rotation
+    #ori_time = torch.tensor(viewpoint_camera.time).to(means3D.device)
+    ori_time = torch.tensor(viewpoint_camera_time).to(means3D.device)
+    deformation_point = pc._deformation_table
+    means3D_deform, scales_deform, rotations_deform = pc.deformation(means3D[deformation_point], 
+                                                                    scales[deformation_point], 
+                                                                    rotations[deformation_point],
+                                                                    ori_time)
+    opacity_deform = opacity[deformation_point]
+    with torch.no_grad():
+        pc._deformation_accum[deformation_point] += torch.abs(means3D_deform - means3D[deformation_point])
+    #FDM
+    means3D_final = torch.zeros_like(means3D)
+    rotations_final = torch.zeros_like(rotations)
+    scales_final = torch.zeros_like(scales)
+    opacity_final = torch.zeros_like(opacity)
+    means3D_final[deformation_point] =  means3D_deform
+    rotations_final[deformation_point] =  rotations_deform
+    scales_final[deformation_point] =  scales_deform
+    opacity_final[deformation_point] = opacity_deform
+    means3D_final[~deformation_point] = means3D[~deformation_point]
+    rotations_final[~deformation_point] = rotations[~deformation_point]
+    scales_final[~deformation_point] = scales[~deformation_point]
+    opacity_final[~deformation_point] = opacity[~deformation_point]
+    
+    return means3D_final,rotations_final,scales_final,opacity_final
+        
+        
+def get_final_attr_tool(misgs_model,viewpoint_camera):
+    #udpate means_3d(xyz) and rotations
+    include_list = list(set(misgs_model.model_name_id.keys()))
+    misgs_model.set_visibility(include_list)# set the self.include_list for misgs_model
+    misgs_model.parse_camera(viewpoint_camera)# set the obj_rots/ graph_obj_list for misgs_model
+    means3D_final = misgs_model.get_xyz_obj_only
+    rotations_final = misgs_model.get_rotation_obj_only
+    return means3D_final,rotations_final
+
+
+
 def render_flow(viewpoint_camera,
                  pc : Union[TissueGaussianModel,ToolModel], 
                  pipe,
@@ -32,14 +77,6 @@ def render_flow(viewpoint_camera,
     Background tensor (bg_color) must be on GPU!
     """
     assert which_compo in ['tool','tissue','all']
-    # # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
-    # screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
-    # try:
-    #     screenspace_points.retain_grad()
-    # except:
-    #     pass
-
-    #code from deform gs : jinjing
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
     screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
     # screenspace_points_densify = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
@@ -48,13 +85,10 @@ def render_flow(viewpoint_camera,
         # screenspace_points_densify.retain_grad()
     except:
         pass
-
-
-    # Set up rasterization configuration
     
+    # Set up rasterization configuration
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
     tanfovy = math.tan(viewpoint_camera.FoVy * 0.5)
-        
     raster_settings = GaussianRasterizationSettings(
         image_height=int(viewpoint_camera.image_height),
         image_width=int(viewpoint_camera.image_width),
@@ -69,15 +103,15 @@ def render_flow(viewpoint_camera,
         prefiltered=False,
         debug=pipe.debug
     )
-
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
+
 
     means2D = screenspace_points
     opacity = pc._opacity
+    scales = pc._scaling
 
     # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
     # scaling / rotation by the rasterizer.
-
     if pipe.compute_cov3D_python:
         assert 0
         # scales = None
@@ -85,49 +119,18 @@ def render_flow(viewpoint_camera,
         cov3D_precomp = pc.get_covariance(scaling_modifier)
     else:
         cov3D_precomp = None
-        scales = pc._scaling
     #//////////////fdm
     if which_compo == 'tissue':
-        #udpate means_3d(xyz) and rotations
-        means3D = pc.get_xyz
-        rotations = pc._rotation
-        ori_time = torch.tensor(viewpoint_camera.time).to(means3D.device)
-        deformation_point = pc._deformation_table
-        means3D_deform, scales_deform, rotations_deform = pc.deformation(means3D[deformation_point], 
-                                                                        scales[deformation_point], 
-                                                                        rotations[deformation_point],
-                                                                        ori_time)
-        opacity_deform = opacity[deformation_point]
-        with torch.no_grad():
-            pc._deformation_accum[deformation_point] += torch.abs(means3D_deform - means3D[deformation_point])
-
-        #FDM
-        means3D_final = torch.zeros_like(means3D)
-        rotations_final = torch.zeros_like(rotations)
-        scales_final = torch.zeros_like(scales)
-        opacity_final = torch.zeros_like(opacity)
-        means3D_final[deformation_point] =  means3D_deform
-        rotations_final[deformation_point] =  rotations_deform
-        scales_final[deformation_point] =  scales_deform
-        opacity_final[deformation_point] = opacity_deform
-        means3D_final[~deformation_point] = means3D[~deformation_point]
-        rotations_final[~deformation_point] = rotations[~deformation_point]
-        scales_final[~deformation_point] = scales[~deformation_point]
-        opacity_final[~deformation_point] = opacity[~deformation_point]
+        means3D_final,rotations_final,scales_final,opacity_final = get_final_attr_tissue(pc = pc,
+                                                                                         viewpoint_camera_time = viewpoint_camera.time,
+                                                                                         initial_scales = scales,
+                                                                                         initial_opacity= opacity,
+                                                                                         )
     elif which_compo == 'tool':
-        #udpate means_3d(xyz) and rotations
-        if debug_getxyz_misgs:
-            include_list = list(set(misgs_model.model_name_id.keys()))
-            misgs_model.set_visibility(include_list)# set the self.include_list for misgs_model
-            misgs_model.parse_camera(viewpoint_camera)# set the obj_rots/ graph_obj_list for misgs_model
-            means3D_final = misgs_model.get_xyz_obj_only
-            rotations = misgs_model.get_rotation_obj_only
-            scales_final = scales
-            rotations_final = rotations
-            opacity_final = opacity
-        else:
-            assert 0
-
+        assert debug_getxyz_misgs
+        means3D_final,rotations_final = get_final_attr_tool(misgs_model=misgs_model,viewpoint_camera=viewpoint_camera)
+        scales_final = scales
+        opacity_final = opacity
 
     scales_final = pc.scaling_activation(scales_final)
     rotations_final = pc.rotation_activation(rotations_final)
@@ -150,14 +153,9 @@ def render_flow(viewpoint_camera,
     else:
         colors_precomp = override_color
  
-    # Rasterize visible Gaussians to image, obtain their radii (on screen). 
-    # rendered_image, radii, depth = rasterizer(
-    # rendered_image, radii, depth, _, _ = rasterizer( #latest: no means2d_densify; return 5 values
-    # print('debug tissue',means3D_final.shape,means3D_final[0,0])
-    rendered_image, radii, depth,  = rasterizer( #latest: no means2d_densify; return 5 values
+    rendered_image, radii, depth,  = rasterizer( 
         means3D = means3D_final,
         means2D = means2D,
-        #jj
         # means2D_densify=screenspace_points_densify,
         shs = shs,
         colors_precomp = colors_precomp,
@@ -175,7 +173,6 @@ def render_flow(viewpoint_camera,
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
-
     return {"render": rendered_image,
             "depth": depth,
             "viewspace_points": screenspace_points,
