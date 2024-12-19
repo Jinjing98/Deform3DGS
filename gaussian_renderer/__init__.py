@@ -13,18 +13,25 @@ import torch
 import math
 from diff_gaussian_rasterization import GaussianRasterizationSettings, GaussianRasterizer
 from scene.flexible_deform_model import TissueGaussianModel
+from scene.tool_model import ToolModel
 from utils.sh_utils import eval_sh
-
-
-
-
-def render_flow(viewpoint_camera, pc : TissueGaussianModel, pipe, bg_color : torch.Tensor, scaling_modifier = 1.0, override_color = None):
+from typing import Union
+def render_flow(viewpoint_camera,
+                 pc : Union[TissueGaussianModel,ToolModel], 
+                 pipe,
+                 bg_color : torch.Tensor, 
+                 scaling_modifier = 1.0, 
+                 override_color = None,
+                 debug_getxyz_misgs = False,
+                 misgs_model = None,
+                 which_compo = 'tissue',
+                 ):
     """
     Render the scene. 
     
     Background tensor (bg_color) must be on GPU!
     """
- 
+    assert which_compo in ['tool','tissue','all']
     # # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
     # screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
     # try:
@@ -35,10 +42,10 @@ def render_flow(viewpoint_camera, pc : TissueGaussianModel, pipe, bg_color : tor
     #code from deform gs : jinjing
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
     screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
-    screenspace_points_densify = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
+    # screenspace_points_densify = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
     try:
         screenspace_points.retain_grad()
-        screenspace_points_densify.retain_grad()
+        # screenspace_points_densify.retain_grad()
     except:
         pass
 
@@ -65,50 +72,62 @@ def render_flow(viewpoint_camera, pc : TissueGaussianModel, pipe, bg_color : tor
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
-    # means3D = pc.get_xyz
-    # add deformation to each points
-    # deformation = pc.get_deformation
-    means3D = pc.get_xyz
-    ori_time = torch.tensor(viewpoint_camera.time).to(means3D.device)
     means2D = screenspace_points
     opacity = pc._opacity
 
     # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
     # scaling / rotation by the rasterizer.
-    scales = None
-    rotations = None
-    cov3D_precomp = None
-    
+
     if pipe.compute_cov3D_python:
         assert 0
+        # scales = None
+        # rotations = None
         cov3D_precomp = pc.get_covariance(scaling_modifier)
     else:
+        cov3D_precomp = None
         scales = pc._scaling
+    #//////////////fdm
+    if which_compo == 'tissue':
+        #udpate means_3d(xyz) and rotations
+        means3D = pc.get_xyz
         rotations = pc._rotation
-    deformation_point = pc._deformation_table
-    
+        ori_time = torch.tensor(viewpoint_camera.time).to(means3D.device)
+        deformation_point = pc._deformation_table
+        means3D_deform, scales_deform, rotations_deform = pc.deformation(means3D[deformation_point], 
+                                                                        scales[deformation_point], 
+                                                                        rotations[deformation_point],
+                                                                        ori_time)
+        opacity_deform = opacity[deformation_point]
+        with torch.no_grad():
+            pc._deformation_accum[deformation_point] += torch.abs(means3D_deform - means3D[deformation_point])
 
-    means3D_deform, scales_deform, rotations_deform = pc.deformation(means3D[deformation_point], scales[deformation_point], 
-                                                                         rotations[deformation_point],
-                                                                         ori_time)
-    opacity_deform = opacity[deformation_point]
-        
-    # print(time.max())
-    with torch.no_grad():
-        pc._deformation_accum[deformation_point] += torch.abs(means3D_deform - means3D[deformation_point])
+        #FDM
+        means3D_final = torch.zeros_like(means3D)
+        rotations_final = torch.zeros_like(rotations)
+        scales_final = torch.zeros_like(scales)
+        opacity_final = torch.zeros_like(opacity)
+        means3D_final[deformation_point] =  means3D_deform
+        rotations_final[deformation_point] =  rotations_deform
+        scales_final[deformation_point] =  scales_deform
+        opacity_final[deformation_point] = opacity_deform
+        means3D_final[~deformation_point] = means3D[~deformation_point]
+        rotations_final[~deformation_point] = rotations[~deformation_point]
+        scales_final[~deformation_point] = scales[~deformation_point]
+        opacity_final[~deformation_point] = opacity[~deformation_point]
+    elif which_compo == 'tool':
+        #udpate means_3d(xyz) and rotations
+        if debug_getxyz_misgs:
+            include_list = list(set(misgs_model.model_name_id.keys()))
+            misgs_model.set_visibility(include_list)# set the self.include_list for misgs_model
+            misgs_model.parse_camera(viewpoint_camera)# set the obj_rots/ graph_obj_list for misgs_model
+            means3D_final = misgs_model.get_xyz_obj_only
+            rotations = misgs_model.get_rotation_obj_only
+            scales_final = scales
+            rotations_final = rotations
+            opacity_final = opacity
+        else:
+            assert 0
 
-    means3D_final = torch.zeros_like(means3D)
-    rotations_final = torch.zeros_like(rotations)
-    scales_final = torch.zeros_like(scales)
-    opacity_final = torch.zeros_like(opacity)
-    means3D_final[deformation_point] =  means3D_deform
-    rotations_final[deformation_point] =  rotations_deform
-    scales_final[deformation_point] =  scales_deform
-    opacity_final[deformation_point] = opacity_deform
-    means3D_final[~deformation_point] = means3D[~deformation_point]
-    rotations_final[~deformation_point] = rotations[~deformation_point]
-    scales_final[~deformation_point] = scales[~deformation_point]
-    opacity_final[~deformation_point] = opacity[~deformation_point]
 
     scales_final = pc.scaling_activation(scales_final)
     rotations_final = pc.rotation_activation(rotations_final)
@@ -120,6 +139,7 @@ def render_flow(viewpoint_camera, pc : TissueGaussianModel, pipe, bg_color : tor
     colors_precomp = None
     if override_color is None:
         if pipe.convert_SHs_python:
+            assert 0
             shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)
             dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.cuda().repeat(pc.get_features.shape[0], 1))
             dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
@@ -149,9 +169,9 @@ def render_flow(viewpoint_camera, pc : TissueGaussianModel, pipe, bg_color : tor
     
     from utils.scene_utils import vis_torch_img
     vis_img_debug = False
-    # vis_img_debug = True
+    vis_img_debug = True
     if vis_img_debug:
-        vis_torch_img(rendered_image=rendered_image,topic = 'tissue')
+        vis_torch_img(rendered_image=rendered_image,topic = f'compo_{which_compo}')
 
     # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
     # They will be excluded from value updates used in the splitting criteria.
