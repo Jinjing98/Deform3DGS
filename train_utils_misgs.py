@@ -192,41 +192,37 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         model_names_all_compo_adc = []
         
         if cfg.model.nsg.include_tissue and cfg.model.nsg.include_obj:
-            
             debug_fuse = False
             # debug_fuse = True
+            compo_all_gs_ordered=['tissue']
+            compo_all_gs_ordered=['obj_tool1']
+            compo_all_gs_ordered=['tissue','obj_tool1']
             if debug_fuse:
-                render_pkg_tool = fdm_render(viewpoint_cam, 
-                                            #  controller.obj_tool1, 
+                render_pkg_all,compo_all_gs_ordered_idx = fdm_render(viewpoint_cam, 
                                              None, 
                                              cfg.render, 
                                              background,
                                             debug_getxyz_misgs=debug_getxyz_misgs,
                                             misgs_model=controller,
-                                            which_compo='all'
+                                            which_compo='all',
+                                            compo_all_gs_ordered=compo_all_gs_ordered,
                                             )
-                # image_tissue, depth_tissue, viewspace_point_tensor_tissue, visibility_filter_tissue, radii_tissue = \
-                #     render_pkg_tissue["render"], render_pkg_tissue["depth"], render_pkg_tissue["viewspace_points"], \
-                #         render_pkg_tissue["visibility_filter"], render_pkg_tissue["radii"]
-                # image_tool, depth_tool, viewspace_point_tensor_tool, visibility_filter_tool, radii_tool = \
-                #     render_pkg_tool["render"], render_pkg_tool["depth"], render_pkg_tool["viewspace_points"], \
-                #         render_pkg_tool["visibility_filter"], render_pkg_tool["radii"]
-                        
                 # get the dict below     
-                image_all = None
-                model_names_all_compo_adc.append('obj_tool1')
-                radii_all_compo_adc['obj_tool1'] = radii_tool
-                visibility_filters_all_compo_adc['obj_tool1'] = visibility_filter_tool
-                viewspace_point_tensors_all_compo_adcdict['obj_tool1'] = viewspace_point_tensor_tool                        
-                        
+                image_all = render_pkg_all["render"]
+                for model_name,(start_idx,end_idx) in compo_all_gs_ordered_idx.items():
+                    model_names_all_compo_adc.append(model_name)
+                    radii_all_compo_adc[model_name] = render_pkg_all["radii"][start_idx:end_idx]
+                    visibility_filters_all_compo_adc[model_name] = render_pkg_all["visibility_filter"][start_idx:end_idx]
+                    viewspace_point_tensors_all_compo_adcdict[model_name] = render_pkg_all["viewspace_points"][start_idx:end_idx]
+                assert model_names_all_compo_adc == compo_all_gs_ordered,'sanity check'
             
             else:
-                render_pkg_tissue = fdm_render(viewpoint_cam, controller.tissue, cfg.render, background)            
+                render_pkg_tissue,_ = fdm_render(viewpoint_cam, controller.tissue, cfg.render, background)            
                 image_tissue, depth_tissue, viewspace_point_tensor_tissue, visibility_filter_tissue, radii_tissue = \
                     render_pkg_tissue["render"], render_pkg_tissue["depth"], render_pkg_tissue["viewspace_points"], \
                         render_pkg_tissue["visibility_filter"], render_pkg_tissue["radii"]
 
-                render_pkg_tool = fdm_render(viewpoint_cam, controller.obj_tool1, cfg.render, background,
+                render_pkg_tool,_ = fdm_render(viewpoint_cam, controller.obj_tool1, cfg.render, background,
                                             debug_getxyz_misgs=debug_getxyz_misgs,
                                             misgs_model=controller,
                                             which_compo='tool'
@@ -240,16 +236,16 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 Ll1 = l1_loss(image_all, gt_image, tissue_mask)
                 #scalar_dict['l1_loss'] = Ll1.item()
                 loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + \
-                    optim_args.lambda_dssim * (1.0 - ssim(image_tissue.to(torch.double), \
+                    optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), \
                                                         gt_image.to(torch.double), mask=tissue_mask))
 
                 Ll1_tool = l1_loss(image_all, gt_image, tool_mask)
                 #scalar_dict['l1_tool_loss'] = Ll1_tool.item()
                 tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
-                    + optim_args.lambda_dssim * (1.0 - ssim(image_tool.to(torch.double), gt_image.to(torch.double), \
+                    + optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), gt_image.to(torch.double), \
                                                             mask=tool_mask))
                 # loss += tool_loss
-    #            loss = 0*loss+tool_loss
+                # loss = 0*loss+tool_loss
                 loss = loss+tool_loss*0
             else:
 
@@ -264,8 +260,8 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
                     + optim_args.lambda_dssim * (1.0 - ssim(image_tool.to(torch.double), gt_image.to(torch.double), \
                                                             mask=tool_mask))
-                # loss += tool_loss
-                loss = 0*loss+tool_loss
+                loss += tool_loss
+                # loss = 0*loss+tool_loss
                 # loss = loss+tool_loss*0
 
                 # register for adc
@@ -282,7 +278,7 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             
         else:
             if cfg.model.nsg.include_tissue:
-                render_pkg_tissue = fdm_render(viewpoint_cam, controller.tissue, cfg.render, background)
+                render_pkg_tissue,_ = fdm_render(viewpoint_cam, controller.tissue, cfg.render, background)
                 image_tissue, depth_tissue, viewspace_point_tensor_tissue, visibility_filter_tissue, radii_tissue = \
                     render_pkg_tissue["render"], render_pkg_tissue["depth"], render_pkg_tissue["viewspace_points"], \
                         render_pkg_tissue["visibility_filter"], render_pkg_tissue["radii"]
@@ -306,7 +302,7 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
             if cfg.model.nsg.include_obj:
                 # render_pkg_tool = gaussians_renderer.render_object(viewpoint_cam, gaussians)
-                render_pkg_tool = fdm_render(viewpoint_cam, controller.obj_tool1, cfg.render, background,
+                render_pkg_tool,_ = fdm_render(viewpoint_cam, controller.obj_tool1, cfg.render, background,
                                             debug_getxyz_misgs=debug_getxyz_misgs,
                                             misgs_model=controller,
                                             which_compo='tool'
@@ -330,10 +326,7 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
 
         scalar_dict['loss'] = loss.item()
-
         loss.backward()
-
-
         # follow deform3dgs
 
         iter_end.record()
@@ -362,10 +355,10 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                         sub_gs_model = getattr(controller, model_name)
                         try:
                             assert 'tissue' in model_name
-                            render_pkg= fdm_render(viewpoint_cam, sub_gs_model, cfg.render, background)
+                            render_pkg,_= fdm_render(viewpoint_cam, sub_gs_model, cfg.render, background)
                         except:
                             assert 'tool' in model_name
-                            render_pkg= fdm_render(viewpoint_cam, sub_gs_model, cfg.render, background,
+                            render_pkg,_= fdm_render(viewpoint_cam, sub_gs_model, cfg.render, background,
                                                     debug_getxyz_misgs = debug_getxyz_misgs,
                                                     misgs_model = controller,
                                                     which_compo='tool'
@@ -393,6 +386,9 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
             if cfg.model.nsg.include_tissue:
+                if debug_fuse:
+                    image_tissue = image_all
+                    image_tool = image_all
                 ema_psnr_for_log = 0.4 * psnr(image_tissue, gt_image, tissue_mask).mean().float() + 0.6 * ema_psnr_for_log
                 if viewpoint_cam.id not in psnr_dict:
                     psnr_dict[viewpoint_cam.id] = psnr(image_tissue, gt_image, tissue_mask).mean().float()

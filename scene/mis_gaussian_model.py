@@ -268,7 +268,7 @@ class MisGaussianModel(nn.Module):
         # an obj model can have general True visinility but due to timestamp issue not included in graph_obj_list
         self.graph_obj_list = [] 
         # set index range
-        # self.graph_gaussian_range = dict()
+        # self.graph_gaussian_range = dict()# used for trace render all compo once
         idx = 0
         for model_name in self.model_name_id.keys():
             if self.get_visibility(model_name=model_name):
@@ -605,6 +605,7 @@ class MisGaussianModel(nn.Module):
             # assert 0,'not checked'
             viewspace_point_tensor_grad = viewspace_point_tensor.grad
             model: GaussianModelBase = getattr(self, model_name)
+            print('debug',viewspace_point_tensor_grad,model.xyz_gradient_accum,visibility_filter)
             model.xyz_gradient_accum[visibility_filter, 0:1] += torch.norm(viewspace_point_tensor_grad[visibility_filter, :2], dim=-1, keepdim=True)
             model.xyz_gradient_accum[visibility_filter, 1:2] += torch.norm(viewspace_point_tensor_grad[visibility_filter, 2:], dim=-1, keepdim=True)
             model.denom[visibility_filter] += 1
