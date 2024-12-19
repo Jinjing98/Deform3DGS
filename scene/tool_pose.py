@@ -13,12 +13,14 @@ class ToolPose(nn.Module):
                  cfg_optim = None,
                  opt_track = True,
                  cam_id = 0,
-                 cfg = None):
+                 cfg = None,
+                 tracklets = None,
+                 tracklet_timestamps = None,
+                 ):
         # tracklets: [num_frames, max_obj, [track_id, x, y, z, qw, qx, qy, qz]]
         # frame_timestamps: [num_frames]
         super().__init__()
         print('Think about learn with lie..(now rpy)')
-
         self.cfg = cfg
         self.cfg_optim = cfg_optim
         self.camera_timestamps = camera_timestamps
@@ -26,25 +28,32 @@ class ToolPose(nn.Module):
         # we predict abs pose
         frames_num = len(self.timestamps)
         # obj_pose_rot_optim_space = 'rpy', #'lie'
+        assert objs_num == 1,objs_num
         if self.cfg_optim.obj_pose_init == '0':
             self.input_trans = torch.zeros([frames_num,objs_num,3]).float().cuda()
-            self.input_rots_rpy = torch.zeros([frames_num,objs_num,3]).float().cuda()
+            self.input_rots_quat = torch.zeros([frames_num,objs_num,4]).float().cuda() #wxyz
+            self.input_rots_quat[:,:,0] = 1
         elif self.cfg_optim.obj_pose_init == 'cotrackerpnp':
-            assert self.cfg.model.load_cotrackerPnpPose
             self.input_trans = torch.zeros([frames_num,objs_num,3]).float().cuda()
-            self.input_rots_rpy = torch.zeros([frames_num,objs_num,3]).float().cuda()
-            x_values = torch.arange(1, frames_num + 1).unsqueeze(1).expand(-1, objs_num) # Shape [frames_num, objs_num]
-            self.input_trans[:, :, 0] = -x_values  # Assign to the x-values (index 0)
+            self.input_rots_quat = torch.zeros([frames_num,objs_num,4]).float().cuda() #wxyz
+            self.input_rots_quat[:,:,0] = 1
+            for i in range(objs_num):
+                cotrackerpnp_trajectory_cams2w = tracklets[f'obj_tool{i+1}']['trajectory_cams2w'].float().cuda()# 
+                load_num,_,_ = cotrackerpnp_trajectory_cams2w.shape
+                assert load_num == frames_num
+                cotrackerpnp_trajectory_w2cams2 = torch.linalg.inv(cotrackerpnp_trajectory_cams2w)
+                self.input_trans[:,i,:] = cotrackerpnp_trajectory_w2cams2[:,:3,3]
+                input_rots_mat = cotrackerpnp_trajectory_w2cams2[:,:3,:3]
+                self.input_rots_quat[:,i,:] = matrix_to_quaternion(input_rots_mat)#cotrackerpnp_trajectory_cams2w[:,:3,3]      
         else:
             assert 0,  self.cfg_optim.obj_pose_init
-        # self.input_rots_rpy = torch.ones([frames_num,objs_num,3]).float().cuda()
-        self.input_rots_rpy = torch.zeros([frames_num,objs_num,3]).float().cuda()
-        assert objs_num == 1,objs_num
 
         self.opt_track = opt_track #cfg.model.nsg.opt_track
         if self.opt_track:
-            self.opt_trans = nn.Parameter(torch.zeros_like(self.input_trans)).requires_grad_(True) 
-            self.opt_rots_rpy = nn.Parameter(torch.zeros_like(self.input_rots_rpy)).requires_grad_(True) 
+            self.opt_trans = nn.Parameter(torch.zeros_like(self.input_trans)).requires_grad_(True).to(self.input_trans.device) 
+            f_num,obj_num,_  = self.opt_trans.shape
+            self.opt_rots_rpy = nn.Parameter(torch.zeros([f_num,obj_num,3],
+                                                         device = self.input_trans.device)).requires_grad_(True) 
         else:
             assert 0, NotImplementedError
 
@@ -159,8 +168,9 @@ class ToolPose(nn.Module):
         frame_idx = self.timestamps.index(cam_timestamp)
         roll_pitch_yaw = self.opt_rots_rpy[frame_idx,track_id]
         quaternion = euler_to_quaternion(roll_pitch_yaw)
-        roll_pitch_yaw_input = self.input_rots_rpy[frame_idx,track_id]
-        quaternion_input = euler_to_quaternion(roll_pitch_yaw_input)
+        # roll_pitch_yaw_input = self.input_rots_rpy[frame_idx,track_id]
+        # quaternion_input = euler_to_quaternion(roll_pitch_yaw_input)
+        quaternion_input = self.input_rots_quat[frame_idx,track_id]
         quaternion = quaternion_raw_multiply(quaternion_input.unsqueeze(0), 
                                     quaternion.unsqueeze(0)).squeeze(0)
         # print("Quaternion (w, x, y, z):", quaternion)
