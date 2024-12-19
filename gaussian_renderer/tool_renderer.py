@@ -16,7 +16,6 @@ from scene.tool_model import ToolModel
 from utils.sh_utils import eval_sh
 
 
- 
 def tool_render(viewpoint_camera, 
                 pc : ToolModel, 
                 pipe, 
@@ -72,53 +71,38 @@ def tool_render(viewpoint_camera,
 
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
-    # means3D = pc.get_xyz
-    # add deformation to each points
-    # deformation = pc.get_deformation
-    # means3D = pc.get_xyz
-    # ori_time = torch.tensor(viewpoint_camera.time).to(means3D.device)
     means2D = screenspace_points
     opacity = pc._opacity
 
     # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
     # scaling / rotation by the rasterizer.
-    scales = None
-    rotations = None
-    cov3D_precomp = None
+
     if pipe.compute_cov3D_python:
         assert 0
+        # scales = None
+        # rotations = None
         cov3D_precomp = pc.get_covariance(scaling_modifier)
     else:
+        cov3D_precomp = None
         scales = pc._scaling
-        # rotations = pc._rotation
-
+    # //////////////////OBJ
     #udpate means_3d(xyz) and rotations
     if debug_getxyz_misgs:
         include_list = list(set(misgs_model.model_name_id.keys()))
         misgs_model.set_visibility(include_list)# set the self.include_list for misgs_model
-        # print('debug hard set')
-        # print('there are issue for endonerf pose---is it okay for train.py naive version, why not get affected?')
-        # viewpoint_camera.ego_pose = torch.eye(4).to(viewpoint_camera.ego_pose.device)
         misgs_model.parse_camera(viewpoint_camera)# set the obj_rots/ graph_obj_list for misgs_model
-        # print('debug after obj_trans',misgs_model.obj_trans)
-        # print('debug isssue',viewpoint_camera.ego_pose)
-        means3D = misgs_model.get_xyz_obj_only
-        # print('debug isssue2',means3D[:5,])
+        means3D_final = misgs_model.get_xyz_obj_only
         rotations = misgs_model.get_rotation_obj_only
+        scales_final = scales
+        rotations_final = rotations
+        opacity_final = opacity
     else:
         assert 0
-    # assert 0
-    # print('op')
-    # print(opacity)
 
-    means3D_final = means3D
-    rotations_final = rotations
-    scales_final = scales
-    opacity_final = opacity
 
-    scales_final = pc.scaling_activation(scales_final)
-    rotations_final = pc.rotation_activation(rotations_final)
-    opacity_final = pc.opacity_activation(opacity_final)
+    scales_final = pc.scaling_activation(scales)
+    rotations_final = pc.rotation_activation(rotations)
+    opacity_final = pc.opacity_activation(opacity)
 
     # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
     # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
@@ -148,16 +132,15 @@ def tool_render(viewpoint_camera,
         # means2D_densify=screenspace_points_densify,
         shs = shs,
         colors_precomp = colors_precomp,
-        # opacities = opacity,
         opacities = opacity_final,
         scales = scales_final,
         rotations = rotations_final,
         cov3D_precomp = cov3D_precomp)
-    # rendered_image_vis_tool = rendered_image.detach().to('cpu')
+    rendered_image_vis_tool = rendered_image.detach().to('cpu')
     
     from utils.scene_utils import vis_torch_img
     vis_img_debug = False
-    # vis_img_debug = True
+    vis_img_debug = True
     if vis_img_debug:
         vis_torch_img(rendered_image=rendered_image,topic = 'tool')
 
