@@ -38,6 +38,7 @@ def render_set_misgs(model_path, name, iteration, views, gaussians, pipeline, ba
     elif which_model == 'obj_tool1':
         from gaussian_renderer.tool_renderer import tool_render
         render_func = tool_render
+        assert 0,'to do'
     elif which_model == 'all':
         from gaussian_renderer.misgs_renderer import MisGaussianRenderer
         render_func = MisGaussianRenderer

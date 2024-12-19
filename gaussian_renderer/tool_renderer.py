@@ -25,6 +25,7 @@ def tool_render(viewpoint_camera,
                 debug_getxyz_misgs = False,
                 misgs_model = None,
                 ):
+    assert 0, 'tmp disble tool render'
     """
     Render the scene. 
     

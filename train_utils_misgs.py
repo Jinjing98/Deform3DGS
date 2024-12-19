@@ -119,7 +119,7 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
     # from render_misgs import MisGaussianRenderer
     # gaussians_renderer = MisGaussianRenderer(cfg=cfg)
     from gaussian_renderer import render_flow as fdm_render
-    from gaussian_renderer.tool_renderer import tool_render
+    # from gaussian_renderer.tool_renderer import tool_render
     # from gaussian_renderer import render_flow as render
 
     iter_start = torch.cuda.Event(enable_timing = True)
@@ -206,9 +206,10 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
         if cfg.model.nsg.include_obj:
             # render_pkg_tool = gaussians_renderer.render_object(viewpoint_cam, gaussians)
-            render_pkg_tool = tool_render(viewpoint_cam, controller.obj_tool1, cfg.render, background,
+            render_pkg_tool = fdm_render(viewpoint_cam, controller.obj_tool1, cfg.render, background,
                                           debug_getxyz_misgs=debug_getxyz_misgs,
                                           misgs_model=controller,
+                                          which_compo='tool'
                                           )
             image_tool, depth_tool, viewspace_point_tensor_tool, visibility_filter_tool, radii_tool = \
                 render_pkg_tool["render"], render_pkg_tool["depth"], render_pkg_tool["viewspace_points"], \
@@ -222,8 +223,8 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 + optim_args.lambda_dssim * (1.0 - ssim(image_tool.to(torch.double), gt_image.to(torch.double), \
                                                         mask=tool_mask))
             # loss = tool_loss
-            # loss += tool_loss
-            loss = 0*loss+tool_loss
+            loss += tool_loss
+            # loss = 0*loss+tool_loss
             # loss = loss+tool_loss*0
 
 
@@ -264,9 +265,10 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                             render_pkg= fdm_render(viewpoint_cam, sub_gs_model, cfg.render, background)
                         except:
                             assert 'tool' in model_name
-                            render_pkg= tool_render(viewpoint_cam, sub_gs_model, cfg.render, background,
+                            render_pkg= fdm_render(viewpoint_cam, sub_gs_model, cfg.render, background,
                                                     debug_getxyz_misgs = debug_getxyz_misgs,
                                                     misgs_model = controller,
+                                                    which_compo='tool'
                                                     )
 
                         image_obj, depth_obj = render_pkg["render"], render_pkg['depth']
