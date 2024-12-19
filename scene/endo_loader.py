@@ -78,6 +78,7 @@ class EndoNeRF_Dataset(object):
         downsample=1.0,
         test_every=8,
         tool_mask = 'use',
+        load_cotrackerPnpPose = False,
 
     ):
         self.img_wh = (
@@ -115,6 +116,7 @@ class EndoNeRF_Dataset(object):
                                 }}
 
         self.maxtime = 1.0
+        self.load_cotrackerPnpPose = load_cotrackerPnpPose
 
     def load_meta(self):
         """
@@ -602,8 +604,40 @@ class EndoNeRF_Dataset(object):
         tracklet_timestamps = None
         obj_info = None
         # num_frames = None
-        obj_tracklets = None
         exts = []
+
+        # #/////////////////////////////
+        if self.load_cotrackerPnpPose:
+            assert self.dataset in ['StereoMIS'], NotImplementedError
+
+            # get paths of images, depths, masks, etc.
+            pose_pattern = 'ObjPoses_rel_CoTracer_query_queryGenMaskframe-000000_ptsN1000_PnP_LMrf0'
+            agg_fn = lambda filetype: sorted(glob.glob(os.path.join(self.root_dir, f"*{pose_pattern}.pt")))
+            cotrackerPnpPose_paths = agg_fn("images")
+            objs_num = len(cotrackerPnpPose_paths)
+            assert objs_num == 1, "support exact 1 tool_obj"
+            obj_tracklets = {}
+            for i,cotrackerPnpPose_path in enumerate(cotrackerPnpPose_paths):
+                obj_tracklets[f'obi_tool{i+1}'] = torch.load(cotrackerPnpPose_path, 
+                                                            #  map_location=torch.device()
+                                                             )
+            # ///////////////obj_tracklets
+            #  {
+                    # 'obi_tool1': {
+                    # 'poses_mat':xxx,
+                    # 'R':xxx,
+                    # 't':xxx,
+                    # },
+                    # 'obi_tool2': {
+                    # 'poses_mat':xxx,
+                    # 'R':xxx,
+                    # 't':xxx,
+                    # },
+            # }
+            # #////////////////////////////////
+
+
+
 
         scene_metadata = dict()
         scene_metadata['obj_tracklets'] = obj_tracklets

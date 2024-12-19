@@ -116,7 +116,7 @@ class MisGaussianModel(nn.Module):
                 model = ToolModel(model_args = self.cfg.model.gaussian,
                                   obj_meta=None,
                                   track_id=i,
-                                  cfg = self.cfg)
+                                  cfg = self.cfg,)
                 setattr(self, model_name, model)
                 self.model_name_id[model_name] = self.models_num
                 self.models_num += 1
@@ -132,7 +132,9 @@ class MisGaussianModel(nn.Module):
                                                 cfg_optim=self.cfg.optim,
                                                 opt_track = self.cfg.model.nsg.opt_track,
                                                 cam_id=0,
-                                                cfg = self.cfg)
+                                                cfg = self.cfg,
+                                                tracklets=obj_tracklets,
+                                                tracklet_timestamps=None)
                 self.obj_list.append(self.poses_all_objs)
                 
     

@@ -51,6 +51,7 @@ class Scene:
                                                             load_other_obj_meta=load_other_obj_meta,
                                                             cfg = new_cfg,
                                                             load_pcd_dict_in_sceneinfo=self.load_pcd_dict_in_sceneinfo,
+                                                            load_cotrackerPnpPose=args.load_cotrackerPnpPose,
                                                             
                                                             )
             print("Found poses_bounds.py and extra marks with EndoNeRf")

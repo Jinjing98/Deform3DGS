@@ -222,7 +222,8 @@ def generateCamerasFromTransforms(path, template_transformsfile, extension, maxt
 def readEndoNeRFInfo(datadir,tool_mask = 'use',init_mode = None,
                      load_other_obj_meta = False,
                      cfg = None,
-                     load_pcd_dict_in_sceneinfo = False
+                     load_pcd_dict_in_sceneinfo = False,
+                     load_cotrackerPnpPose = False,
                      ):
     assert init_mode in ['MAPF','skipMAPF','rand']
     from scene.endo_loader import EndoNeRF_Dataset
@@ -234,6 +235,7 @@ def readEndoNeRFInfo(datadir,tool_mask = 'use',init_mode = None,
         datadir=datadir,
         downsample=1.0,
         tool_mask=tool_mask,
+        load_cotrackerPnpPose = load_cotrackerPnpPose,
     )
 
     # Load_cameras(with imgs)_with_meta: 

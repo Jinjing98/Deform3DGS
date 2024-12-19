@@ -170,6 +170,9 @@ def render_sets_misgs(
         gaussians = TissueGaussianModel(mod_stree_param.sh_degree, hyperparam)  if which_model in ['tissue'] else \
             ToolModel(mod_stree_param.sh_degree, hyperparam)
         scene = Scene(mod_stree_param)
+        assert 0, f'need load_other_obj_meta for pose?'
+        scene = Scene(mod_stree_param,load_other_obj_meta=True,new_cfg=cfg)
+
         scene.gs_init(gaussians_or_controller=gaussians, load_iteration=iteration,
                         reset_camera_extent=mod_stree_param.camera_extent,
                         load_which_pcd=load_which_pcd)
