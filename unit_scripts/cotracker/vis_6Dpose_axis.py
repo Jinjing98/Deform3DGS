@@ -117,7 +117,6 @@ def vis_6dpose_axis(mask_paths,
 
     pts_valid_anchor,  mask_anchor = get_pts_cam(depth, K, mask, disable_mask=False)
     xyz_obj_center_3D_anchor = pts_valid_anchor.mean(axis=0)# trans_unit mm 
-    images_paths =[ path.replace('masks','images').replace('mask','color')  for path in mask_paths]
 
     # startingframe_world transformation--we regard its rot to same as world
     pose_base_w2c0 = np.eye(4)

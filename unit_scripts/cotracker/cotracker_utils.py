@@ -5,6 +5,33 @@ import numpy as np
 from PIL import Image
 import matplotlib.pyplot as plt
 import random
+import cv2
+
+def load_data_from_images(image_paths):
+    images = []
+    for path in image_paths:
+        image = cv2.imread(path)
+        if image is None:
+            print(f"Error: Cannot open image file {path}")
+            assert 0
+        # image = cv2.resize(image, (desired_width, desired_height))
+        images.append(image)
+    if not images:
+        raise ValueError("No valid images loaded. Check the paths provided.")
+    # Convert list of images to a NumPy array
+    images_np = np.stack(images, axis=0)  # Shape: (T, H, W, C)
+    # Convert to PyTorch tensor and permute dimensions to (1, T, C, H, W)
+    cotracker_images = torch.tensor(images_np).permute(0, 3, 1, 2)[None].float()
+    return cotracker_images, images_np
+
+
+
+    # frames = np.stack(frames,axis=0) # 11 512 640 3
+
+    #//////////////////
+    # cotracker_video = torch.tensor(frames).permute(0, 3, 1, 2)[None].float()  # B T C H W
+    # return cotracker_video,frames
+
 
 def load_data_from_video(video_path):
     #///////////////

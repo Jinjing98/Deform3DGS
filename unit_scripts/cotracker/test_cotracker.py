@@ -1,5 +1,5 @@
 # from utils.cotracker_utils import load_data_from_video,queries_from_mask,sanity_check_queries,get_vis_obj
-from cotracker_utils import load_data_from_video,queries_from_mask,sanity_check_queries,get_vis_obj,dummy_queries_from_hard
+from cotracker_utils import load_data_from_video,load_data_from_images,queries_from_mask,sanity_check_queries,get_vis_obj,dummy_queries_from_hard
 import os
 import torch
 import glob
@@ -18,40 +18,47 @@ if __name__== "__main__":
     # /demo.ipynb#scrollTo=fe23d210-ed90-49f1-8311-b7e354c7a9f6
     whichs = ['grid','query','query_bi']
     
+    read_input_imgs_from_which = 'img'#'video'#'img'
+    assert read_input_imgs_from_which in ['video','img']
     use_which = 'query' # looks query can already gave accepatable results
     # use_which = 'query_bi'
     backward_tracking=True if 'bi' in use_which else False
 
     data_piece = 'P2_7_455_465'
-    exp_name = '12-17_09-53-45_use_skipMAPF_0_extent10_SHORT'
-
-
     # data_piece = 'P2_7_455_480'
-    # exp_name = '12-17_14-03-39_use_skipMAPF_0_extent10'
     # data_piece = 'P2_7_1264_1289'
-    # exp_name = '12-17_14-06-08_use_skipMAPF_0_extent10'
-    # # data_piece = 'P2_7_1279_1289'
-    # # exp_name = '12-17_14-15-51_use_skipMAPF_0_extent10'
-
-    # #<4 pts
+    # data_piece = 'P2_7_1279_1289'
     # data_piece = 'P2_7_1653_1678'
-    # exp_name = '12-17_14-13-28_use_skipMAPF_0_extent10'
-
+    if read_input_imgs_from_which == 'video':
+        exp_name = '12-17_09-53-45_use_skipMAPF_0_extent10_SHORT'
+        exp_name = '12-17_09-53-45_use_skipMAPF_0_extent10_0init_REF_SHORT'
+        # exp_name = '12-17_14-03-39_use_skipMAPF_0_extent10'
+        # exp_name = '12-17_14-06-08_use_skipMAPF_0_extent10'
+        # # exp_name = '12-17_14-15-51_use_skipMAPF_0_extent10'
+        # #<4 pts
+        # exp_name = '12-17_14-13-28_use_skipMAPF_0_extent10'
+        video_path_root = f'/mnt/ceph/tco/TCO-Staff/Homes/jinjing/exps/train/gs/SM/{data_piece}'
+        video_path_details = f'/deform3dgs_jj/{exp_name}/video/ours_3000/gt_video.mp4'
+        video_path = video_path_root+video_path_details
+        assert os.path.exists(video_path),video_path
+    else:
+        assert read_input_imgs_from_which == 'img'
 
     grid_size = 30 #bigger denser
-
     # query_gen_from_mask
     query_N = 1000
     inverse_mask = True
     query_which_mask_img_idx = 5 #ideally should be 1st frame is not using queire_bis
     query_which_mask_img_idx = 0
     BASE_DATASET_PATH="/mnt/cluster/datasets/StereoMIS_processed"
-    mask_root=f"{BASE_DATASET_PATH}/{data_piece}/masks"
-    mask_paths = glob.glob(mask_root+'/*')
+    mask_root=f"{BASE_DATASET_PATH}/{data_piece}"
+    mask_paths = glob.glob(mask_root+'/masks/*')
     mask_paths = sorted(mask_paths)
     assert query_which_mask_img_idx <= (len(mask_paths)-1)
-
+    depth_paths = [ mask_path.replace('masks','depth').replace('mask','depth') for mask_path in mask_paths]
+    images_paths =[ path.replace('masks','images').replace('mask','color')  for path in mask_paths]
     #pnp param
+    #save the pose in root raw data
     refine_LM = False
     save_pnp_poses = True
     mask_name_for_queries_gen = mask_paths[query_which_mask_img_idx]
@@ -59,23 +66,9 @@ if __name__== "__main__":
     pnp_poses_partname_co = f'CoTracer_{use_which}_queryGenMask{mask_name_for_queries_gen}_ptsN{query_N}' if 'query' in use_which \
         else f'CoTracer_{use_which}_{grid_size}'
     pnp_poses_partname_pnp = f'PnP_LMrf{int(refine_LM)}' 
-    save_pnp_poses_root = os.path.dirname(mask_root)
-    save_pnp_poses_path = f'{save_pnp_poses_root}/ObjPoses_rel_{pnp_poses_partname_co}_{pnp_poses_partname_pnp}.pt'
-
-    # if 'query' in use_which \
-    
-
+    save_pnp_poses_path = f'{mask_root}/ObjPoses_rel_{pnp_poses_partname_co}_{pnp_poses_partname_pnp}.pt'
     #//////////////////
-    video_path_root = '/mnt/ceph/tco/TCO-Staff/Homes/jinjing/'
-    video_path = video_path_root+f'/exps/train/gs/SM/{data_piece}/deform3dgs_jj/{exp_name}/video/ours_3000/gt_video.mp4'
-    # video_path = os.path.dirname(video_path)+'/P2_4_idx528_553_id1057_1107_f26.mp4'
-    co_vid_save_dir=f"{os.path.dirname(video_path)}/cotracker_videos"
-    os.makedirs(co_vid_save_dir,exist_ok=True)
-    raw_vid_name = os.path.basename(video_path).split('.')[0]
-    co_vid_filename=f'{raw_vid_name}_grid_{grid_size}' if use_which == 'grid' else f'{raw_vid_name}_query_bi{backward_tracking}'
-    if 'query' in use_which:
-        co_vid_filename += f'_maskIDX{query_which_mask_img_idx}N{query_N}'
-
+    co_vid_save_dir = f'{mask_root}/cotracker_videos'
     # used for both pnp and axis_plot
     K = np.array([[560.0158,   0.  ,    320.     ],
                     [  0.   ,   560.01587, 256.     ],
@@ -83,14 +76,20 @@ if __name__== "__main__":
 
     # plot axis--debug poses usage
     # pose_base_anchor
-    init_axis_anchor_which_mask_img_idx = 0
-    # video_path = video_path_root+f'/exps/train/gs/SM/{data_piece}/deform3dgs_jj/12-17_09-53-45_use_skipMAPF_0_extent10_SHORT/video/ours_3000/gt_video.mp4'
-    axis_save_dir = video_path.split('video')[0]
-    axis_save_dir = os.path.join(axis_save_dir,'axis_vis')
+    init_axis_anchor_which_mask_img_idx = 0 #used for compute the vis axis center points
+    axis_save_dir = os.path.join(mask_root,'axis_vis')
 
-    #//////////////////
+
+
+
+    #//////**********************************************////////////
     # load data
-    cotracker_video,frames_cv = load_data_from_video(video_path)
+    if read_input_imgs_from_which == 'video':
+        cotracker_video,frames_cv = load_data_from_video(video_path)
+    elif read_input_imgs_from_which == 'img':
+        cotracker_video,frames_cv = load_data_from_images(image_paths=images_paths)
+    else:
+        assert 0, read_input_imgs_from_which
     cotracker_video = cotracker_video.to(device)
     #//////////////////
     # Run Offline CoTracker:
@@ -113,20 +112,18 @@ if __name__== "__main__":
         assert 0, NotImplementedError
     # //////////////////////////////////////////////////
     #vis--vis cotrakcer opts results
+    os.makedirs(co_vid_save_dir,exist_ok=True)
     vis = get_vis_obj(use_which,co_vid_save_dir)
     vis.visualize(cotracker_video, 
                   tracks=pred_tracks, 
                   visibility=pred_visibility,
-                  filename=co_vid_filename)
-
-
+                  filename=pnp_poses_partname_co)
     #/////////////////////////////////////
     # pred_tracks: B*frames_num*pts_num_N*2    2 refer to (x,y) for 2D keypoints  float
     # pred_visibility: B*frames_num*pts_num_N     bool
     # perfrom PnP for each pair of continous frames based on pred_tracks,pred_visibility, K
     from pnp_based_on_cotracker_opts import perform_pnp
     _, frames_num, pts_num_N,_ = pred_tracks.shape
-    depth_paths = [ mask_path.replace('masks','depth').replace('mask','depth') for mask_path in mask_paths]
     depths = [np.array(Image.open(depth_path)) for depth_path in depth_paths] #unit mm?
     depths = np.stack(depths,axis=0)
     # assert 0,f'{depths}{depths.shape} {pred_tracks} {pred_tracks.shape} {pred_visibility} {pred_visibility.dtype} {pred_visibility.shape}'
@@ -136,12 +133,22 @@ if __name__== "__main__":
     pred_visibility = pred_visibility.squeeze(0).detach().cpu().numpy()
     poses_mat,poses_Rt = perform_pnp(pred_tracks, pred_visibility, K, depths,refine_LM = refine_LM)
     
-    
     if save_pnp_poses:
         # assert 0, f' {poses_Rt} {poses_Rt[0]}'
         poses_Rt_torch_tensors = [torch.tensor([t[i] for t in poses_Rt]) for i in range(len(poses_Rt[0]))]
-        torch.save({'poses_mat': torch.Tensor(np.stack(poses_mat)), 
-                    'poses_Rt': poses_Rt_torch_tensors,
+        
+        def rel2traj(rel_poses_prv2crt, start_pose = np.eye(4)):
+            rel_num = len(rel_poses_prv2crt)
+            trajectory_cams2w = [start_pose]
+            for rel_prv2crt in rel_poses_prv2crt:
+                abs_crt2world = trajectory_cams2w[-1] @ np.linalg.inv(rel_prv2crt)
+                trajectory_cams2w.append(abs_crt2world)
+            return  trajectory_cams2w
+        trajectory_cams2w = rel2traj(rel_poses_prv2crt = poses_mat, start_pose = np.eye(4))
+        torch.save({
+                    'trajectory_cams2w': torch.Tensor(np.stack(trajectory_cams2w)), #previous2current 
+                    'poses_mat_p2c': torch.Tensor(np.stack(poses_mat)), #previous2current 
+                    'poses_Rt_p2c': poses_Rt_torch_tensors,
                     }, save_pnp_poses_path)
     
     
