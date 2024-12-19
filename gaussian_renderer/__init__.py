@@ -16,6 +16,7 @@ from scene.flexible_deform_model import TissueGaussianModel
 from scene.tool_model import ToolModel
 from utils.sh_utils import eval_sh
 from typing import Union
+import numpy as np
 
 def get_final_attr_tissue(pc,viewpoint_camera_time, initial_scales,initial_opacity):
     #udpate means_3d(xyz) and rotations + other attri based on FDM
@@ -62,7 +63,7 @@ def get_final_attr_tool(misgs_model,viewpoint_camera):
 
 
 def render_flow(viewpoint_camera,
-                 pc : Union[TissueGaussianModel,ToolModel], 
+                 pc : Union[TissueGaussianModel,ToolModel,list], 
                  pipe,
                  bg_color : torch.Tensor, 
                  scaling_modifier = 1.0, 
@@ -77,14 +78,50 @@ def render_flow(viewpoint_camera,
     Background tensor (bg_color) must be on GPU!
     """
     assert which_compo in ['tool','tissue','all']
+    
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
-    screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
-    # screenspace_points_densify = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
-    try:
-        screenspace_points.retain_grad()
-        # screenspace_points_densify.retain_grad()
-    except:
-        pass
+    if isinstance(pc,list):
+        screenspace_points_list = []
+        means2D_list = []
+        opacity_list = []
+        scales_list = []
+        sh_degree_list = []
+        for pc_i in pc:
+            print('the order of the pts matters')
+            screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
+            try:
+                screenspace_points.retain_grad()
+            except:
+                pass
+            means2D = screenspace_points
+            opacity = pc_i._opacity
+            scales = pc_i._scaling
+            sh_degree = pc_i.active_sh_degree
+            
+            screenspace_points_list.append(screenspace_points)
+            means2D_list.append(means2D)
+            opacity_list.append(opacity)
+            scales_list.append(scales)
+            sh_degree_list.append(sh_degree)
+            
+        screenspace_points = torch.vstack(screenspace_points_list)
+        means2D = torch.vstack(means2D_list)
+        opacity = torch.vstack(opacity_list)
+        scales = torch.vstack(scales_list)
+        assert len(np.unique(sh_degree_list))==1,'tisseu and tool sh_degree are both 0 for each compo pc'
+        sh_degree = np.unique(sh_degree_list)[0]
+            
+    else:
+        screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
+        try:
+            screenspace_points.retain_grad()
+        except:
+            pass
+        means2D = screenspace_points
+        opacity = pc._opacity
+        scales = pc._scaling
+        sh_degree = pc.active_sh_degree
+    # pc done here
     
     # Set up rasterization configuration
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
@@ -98,7 +135,8 @@ def render_flow(viewpoint_camera,
         scale_modifier=scaling_modifier,
         viewmatrix=viewpoint_camera.world_view_transform.cuda(),
         projmatrix=viewpoint_camera.full_proj_transform.cuda(),
-        sh_degree=pc.active_sh_degree,
+        # sh_degree=pc.active_sh_degree,
+        sh_degree=sh_degree,
         campos=viewpoint_camera.camera_center.cuda(),
         prefiltered=False,
         debug=pipe.debug
@@ -106,27 +144,29 @@ def render_flow(viewpoint_camera,
     rasterizer = GaussianRasterizer(raster_settings=raster_settings)
 
 
-    means2D = screenspace_points
-    opacity = pc._opacity
-    scales = pc._scaling
+
 
     # If precomputed 3d covariance is provided, use it. If not, then it will be computed from
     # scaling / rotation by the rasterizer.
     if pipe.compute_cov3D_python:
-        assert 0
+        assert 0,'todo still need pc'
         # scales = None
         # rotations = None
-        cov3D_precomp = pc.get_covariance(scaling_modifier)
+        # cov3D_precomp = pc.get_covariance(scaling_modifier)
     else:
         cov3D_precomp = None
     #//////////////fdm
     if which_compo == 'tissue':
+        # sh_degree = pc.active_sh_degree,
+        print('debug*************tissue*',pc.active_sh_degree)
         means3D_final,rotations_final,scales_final,opacity_final = get_final_attr_tissue(pc = pc,
                                                                                          viewpoint_camera_time = viewpoint_camera.time,
                                                                                          initial_scales = scales,
                                                                                          initial_opacity= opacity,
                                                                                          )
     elif which_compo == 'tool':
+        print('debug*************tool*',pc.active_sh_degree)
+        
         assert debug_getxyz_misgs
         assert misgs_model != None
         means3D_final,rotations_final = get_final_attr_tool(misgs_model=misgs_model,viewpoint_camera=viewpoint_camera)

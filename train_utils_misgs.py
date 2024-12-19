@@ -194,8 +194,13 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         if cfg.model.nsg.include_tissue and cfg.model.nsg.include_obj:
             
             debug_fuse = False
+            # debug_fuse = True
             if debug_fuse:
-                render_pkg_tool = fdm_render(viewpoint_cam, controller.obj_tool1, cfg.render, background,
+                render_pkg_tool = fdm_render(viewpoint_cam, 
+                                            #  controller.obj_tool1, 
+                                             None, 
+                                             cfg.render, 
+                                             background,
                                             debug_getxyz_misgs=debug_getxyz_misgs,
                                             misgs_model=controller,
                                             which_compo='all'
@@ -259,9 +264,9 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
                     + optim_args.lambda_dssim * (1.0 - ssim(image_tool.to(torch.double), gt_image.to(torch.double), \
                                                             mask=tool_mask))
-                # loss += tool_loss
+                loss += tool_loss
     #            loss = 0*loss+tool_loss
-                loss = loss+tool_loss*0
+                # loss = loss+tool_loss*0
 
                 # register for adc
                 model_names_all_compo_adc.append('tissue')
