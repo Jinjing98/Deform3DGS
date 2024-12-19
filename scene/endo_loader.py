@@ -615,10 +615,10 @@ class EndoNeRF_Dataset(object):
             agg_fn = lambda filetype: sorted(glob.glob(os.path.join(self.root_dir, f"*{pose_pattern}.pt")))
             cotrackerPnpPose_paths = agg_fn("images")
             objs_num = len(cotrackerPnpPose_paths)
-            assert objs_num == 1, "support exact 1 tool_obj"
+            assert objs_num == 1, f"support exact 1 tool_obj:{objs_num}"
             obj_tracklets = {}
             for i,cotrackerPnpPose_path in enumerate(cotrackerPnpPose_paths):
-                obj_tracklets[f'obi_tool{i+1}'] = torch.load(cotrackerPnpPose_path, 
+                obj_tracklets[f'obj_tool{i+1}'] = torch.load(cotrackerPnpPose_path, 
                                                             #  map_location=torch.device()
                                                              )
             # ///////////////obj_tracklets

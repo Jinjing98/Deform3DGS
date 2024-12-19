@@ -316,6 +316,38 @@ def matrix_to_quaternion(matrix: torch.Tensor) -> torch.Tensor:
   
 
 
+
+def RotMat2RPY(rot_matrices):
+    """
+    Convert a batch of rotation matrices (B x N x 3 x 3) to RPY (Euler angles, B x N x 3).
+    Assumes rotation matrix uses ZYX convention.
+
+    Args:
+        rot_matrices (torch.Tensor): Rotation matrices of shape (B, N, 3, 3).
+
+    Returns:
+        torch.Tensor: RPY angles of shape (B, N, 3) [roll, pitch, yaw].
+    """
+    # Extract components of the rotation matrix
+    R11 = rot_matrices[..., 0, 0]
+    R12 = rot_matrices[..., 0, 1]
+    R13 = rot_matrices[..., 0, 2]
+    R21 = rot_matrices[..., 1, 0]
+    R31 = rot_matrices[..., 2, 0]
+    R32 = rot_matrices[..., 2, 1]
+    R33 = rot_matrices[..., 2, 2]
+
+    # Compute roll, pitch, and yaw
+    roll = torch.atan2(R32, R33)  # Rotation around x-axis
+    pitch = torch.asin(-R31)      # Rotation around y-axis
+    yaw = torch.atan2(R21, R11)   # Rotation around z-axis
+
+    # Stack angles into a tensor of shape (B, N, 3)
+    rpy = torch.stack([roll, pitch, yaw], dim=-1)
+
+    return rpy
+
+
 def startswith_any(k, l):
     for s in l:
         if k.startswith(s):
