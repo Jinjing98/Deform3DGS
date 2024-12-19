@@ -85,7 +85,9 @@ def render_flow(viewpoint_camera,
         means2D_list = []
         opacity_list = []
         scales_list = []
-        sh_degree_list = []
+        sh_degree_list = []#jj add to get rid of pc
+        shs_feature_list = [] # jj add to get rid of pc
+        
         for pc_i in pc:
             print('the order of the pts matters')
             screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
@@ -96,20 +98,28 @@ def render_flow(viewpoint_camera,
             means2D = screenspace_points
             opacity = pc_i._opacity
             scales = pc_i._scaling
-            sh_degree = pc_i.active_sh_degree
+            sh_degree = pc_i.active_sh_degree#jj
+            shs_feature = pc_i.get_features #jj
             
             screenspace_points_list.append(screenspace_points)
             means2D_list.append(means2D)
             opacity_list.append(opacity)
             scales_list.append(scales)
-            sh_degree_list.append(sh_degree)
+            sh_degree_list.append(sh_degree)#jj
+            shs_feature_list.append(shs_feature)#jj
             
         screenspace_points = torch.vstack(screenspace_points_list)
         means2D = torch.vstack(means2D_list)
         opacity = torch.vstack(opacity_list)
         scales = torch.vstack(scales_list)
         assert len(np.unique(sh_degree_list))==1,'tisseu and tool sh_degree are both 0 for each compo pc'
-        sh_degree = np.unique(sh_degree_list)[0]
+        sh_degree = np.unique(sh_degree_list)[0]#jj
+        shs_feature = torch.vstack(shs_feature_list)#jj
+
+        # the activation for tool and tisseu are the same
+        pc_scaling_activation = pc[0].scaling_activation
+        pc_rotation_activation = pc[0].rotation_activation
+        pc_opacity_activation = pc[0].opacity_activation
             
     else:
         screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
@@ -121,7 +131,13 @@ def render_flow(viewpoint_camera,
         opacity = pc._opacity
         scales = pc._scaling
         sh_degree = pc.active_sh_degree
+        shs_feature = pc.get_features#jj
+        
+        pc_scaling_activation = pc.scaling_activation
+        pc_rotation_activation = pc.rotation_activation
+        pc_opacity_activation = pc.opacity_activation
     # pc done here
+    print('pc done here.........')
     
     # Set up rasterization configuration
     tanfovx = math.tan(viewpoint_camera.FoVx * 0.5)
@@ -183,9 +199,12 @@ def render_flow(viewpoint_camera,
         assert 0
 
 
-    scales_final = pc.scaling_activation(scales_final)
-    rotations_final = pc.rotation_activation(rotations_final)
-    opacity_final = pc.opacity_activation(opacity_final)
+    # scales_final = pc.scaling_activation(scales_final)
+    # rotations_final = pc.rotation_activation(rotations_final)
+    # opacity_final = pc.opacity_activation(opacity_final)
+    scales_final = pc_scaling_activation(scales_final)
+    rotations_final = pc_rotation_activation(rotations_final)
+    opacity_final = pc_opacity_activation(opacity_final)
 
     # If precomputed colors are provided, use them. Otherwise, if it is desired to precompute colors
     # from SHs in Python, do it. If not, then SH -> RGB conversion will be done by rasterizer.
@@ -194,13 +213,13 @@ def render_flow(viewpoint_camera,
     if override_color is None:
         if pipe.convert_SHs_python:
             assert 0
-            shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)
-            dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.cuda().repeat(pc.get_features.shape[0], 1))
-            dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
-            sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized)
-            colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
+            # shs_view = pc.get_features.transpose(1, 2).view(-1, 3, (pc.max_sh_degree+1)**2)
+            # dir_pp = (pc.get_xyz - viewpoint_camera.camera_center.cuda().repeat(pc.get_features.shape[0], 1))
+            # dir_pp_normalized = dir_pp/dir_pp.norm(dim=1, keepdim=True)
+            # sh2rgb = eval_sh(pc.active_sh_degree, shs_view, dir_pp_normalized)
+            # colors_precomp = torch.clamp_min(sh2rgb + 0.5, 0.0)
         else:
-            shs = pc.get_features
+            shs = shs_feature #pc.get_features
     else:
         colors_precomp = override_color
  

@@ -134,6 +134,7 @@ class ToolModel:
         self.inverse_opacity_activation = inverse_sigmoid
         self.rotation_activation = torch.nn.functional.normalize
 
+
     def capture(self):
         return (
             self.active_sh_degree,
