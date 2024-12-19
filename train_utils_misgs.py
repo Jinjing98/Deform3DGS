@@ -192,49 +192,87 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         model_names_all_compo_adc = []
         
         if cfg.model.nsg.include_tissue and cfg.model.nsg.include_obj:
-            render_pkg_tissue = fdm_render(viewpoint_cam, controller.tissue, cfg.render, background)            
-            image_tissue, depth_tissue, viewspace_point_tensor_tissue, visibility_filter_tissue, radii_tissue = \
-                render_pkg_tissue["render"], render_pkg_tissue["depth"], render_pkg_tissue["viewspace_points"], \
-                    render_pkg_tissue["visibility_filter"], render_pkg_tissue["radii"]
-
-            render_pkg_tool = fdm_render(viewpoint_cam, controller.obj_tool1, cfg.render, background,
-                                        debug_getxyz_misgs=debug_getxyz_misgs,
-                                        misgs_model=controller,
-                                        which_compo='tool'
-                                        )
-            image_tool, depth_tool, viewspace_point_tensor_tool, visibility_filter_tool, radii_tool = \
-                render_pkg_tool["render"], render_pkg_tool["depth"], render_pkg_tool["viewspace_points"], \
-                    render_pkg_tool["visibility_filter"], render_pkg_tool["radii"]
-
-
-
-            Ll1 = l1_loss(image_tissue, gt_image, tissue_mask)
-            scalar_dict['l1_loss'] = Ll1.item()
-            loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + \
-                optim_args.lambda_dssim * (1.0 - ssim(image_tissue.to(torch.double), \
-                                                      gt_image.to(torch.double), mask=tissue_mask))
-
-
-            Ll1_tool = l1_loss(image_tool, gt_image, tool_mask)
-            scalar_dict['l1_tool_loss'] = Ll1_tool.item()
-            tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
-                + optim_args.lambda_dssim * (1.0 - ssim(image_tool.to(torch.double), gt_image.to(torch.double), \
-                                                        mask=tool_mask))
-            # loss += tool_loss
-            loss = 0*loss+tool_loss
-            # loss = loss+tool_loss*0
-
-
-            # register for adc
-            model_names_all_compo_adc.append('tissue')
-            radii_all_compo_adc['tissue'] = radii_tissue
-            visibility_filters_all_compo_adc['tissue'] = visibility_filter_tissue
-            viewspace_point_tensors_all_compo_adcdict['tissue'] = viewspace_point_tensor_tissue
             
-            model_names_all_compo_adc.append('obj_tool1')
-            radii_all_compo_adc['obj_tool1'] = radii_tool
-            visibility_filters_all_compo_adc['obj_tool1'] = visibility_filter_tool
-            viewspace_point_tensors_all_compo_adcdict['obj_tool1'] = viewspace_point_tensor_tool
+            debug_fuse = False
+            if debug_fuse:
+                render_pkg_tool = fdm_render(viewpoint_cam, controller.obj_tool1, cfg.render, background,
+                                            debug_getxyz_misgs=debug_getxyz_misgs,
+                                            misgs_model=controller,
+                                            which_compo='all'
+                                            )
+                # image_tissue, depth_tissue, viewspace_point_tensor_tissue, visibility_filter_tissue, radii_tissue = \
+                #     render_pkg_tissue["render"], render_pkg_tissue["depth"], render_pkg_tissue["viewspace_points"], \
+                #         render_pkg_tissue["visibility_filter"], render_pkg_tissue["radii"]
+                # image_tool, depth_tool, viewspace_point_tensor_tool, visibility_filter_tool, radii_tool = \
+                #     render_pkg_tool["render"], render_pkg_tool["depth"], render_pkg_tool["viewspace_points"], \
+                #         render_pkg_tool["visibility_filter"], render_pkg_tool["radii"]
+                        
+                # get the dict below     
+                image_all = None
+                model_names_all_compo_adc.append('obj_tool1')
+                radii_all_compo_adc['obj_tool1'] = radii_tool
+                visibility_filters_all_compo_adc['obj_tool1'] = visibility_filter_tool
+                viewspace_point_tensors_all_compo_adcdict['obj_tool1'] = viewspace_point_tensor_tool                        
+                        
+            
+            else:
+                render_pkg_tissue = fdm_render(viewpoint_cam, controller.tissue, cfg.render, background)            
+                image_tissue, depth_tissue, viewspace_point_tensor_tissue, visibility_filter_tissue, radii_tissue = \
+                    render_pkg_tissue["render"], render_pkg_tissue["depth"], render_pkg_tissue["viewspace_points"], \
+                        render_pkg_tissue["visibility_filter"], render_pkg_tissue["radii"]
+
+                render_pkg_tool = fdm_render(viewpoint_cam, controller.obj_tool1, cfg.render, background,
+                                            debug_getxyz_misgs=debug_getxyz_misgs,
+                                            misgs_model=controller,
+                                            which_compo='tool'
+                                            )
+                image_tool, depth_tool, viewspace_point_tensor_tool, visibility_filter_tool, radii_tool = \
+                    render_pkg_tool["render"], render_pkg_tool["depth"], render_pkg_tool["viewspace_points"], \
+                        render_pkg_tool["visibility_filter"], render_pkg_tool["radii"]
+
+
+            if debug_fuse:
+                Ll1 = l1_loss(image_all, gt_image, tissue_mask)
+                #scalar_dict['l1_loss'] = Ll1.item()
+                loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + \
+                    optim_args.lambda_dssim * (1.0 - ssim(image_tissue.to(torch.double), \
+                                                        gt_image.to(torch.double), mask=tissue_mask))
+
+                Ll1_tool = l1_loss(image_all, gt_image, tool_mask)
+                #scalar_dict['l1_tool_loss'] = Ll1_tool.item()
+                tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
+                    + optim_args.lambda_dssim * (1.0 - ssim(image_tool.to(torch.double), gt_image.to(torch.double), \
+                                                            mask=tool_mask))
+                # loss += tool_loss
+    #            loss = 0*loss+tool_loss
+                loss = loss+tool_loss*0
+            else:
+
+                Ll1 = l1_loss(image_tissue, gt_image, tissue_mask)
+                #scalar_dict['l1_loss'] = Ll1.item()
+                loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + \
+                    optim_args.lambda_dssim * (1.0 - ssim(image_tissue.to(torch.double), \
+                                                        gt_image.to(torch.double), mask=tissue_mask))
+
+                Ll1_tool = l1_loss(image_tool, gt_image, tool_mask)
+                #scalar_dict['l1_tool_loss'] = Ll1_tool.item()
+                tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
+                    + optim_args.lambda_dssim * (1.0 - ssim(image_tool.to(torch.double), gt_image.to(torch.double), \
+                                                            mask=tool_mask))
+                # loss += tool_loss
+    #            loss = 0*loss+tool_loss
+                loss = loss+tool_loss*0
+
+                # register for adc
+                model_names_all_compo_adc.append('tissue')
+                radii_all_compo_adc['tissue'] = radii_tissue
+                visibility_filters_all_compo_adc['tissue'] = visibility_filter_tissue
+                viewspace_point_tensors_all_compo_adcdict['tissue'] = viewspace_point_tensor_tissue
+                
+                model_names_all_compo_adc.append('obj_tool1')
+                radii_all_compo_adc['obj_tool1'] = radii_tool
+                visibility_filters_all_compo_adc['obj_tool1'] = visibility_filter_tool
+                viewspace_point_tensors_all_compo_adcdict['obj_tool1'] = viewspace_point_tensor_tool
             
             
         else:
