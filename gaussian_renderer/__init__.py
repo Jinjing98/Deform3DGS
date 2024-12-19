@@ -128,6 +128,7 @@ def render_flow(viewpoint_camera,
                                                                                          )
     elif which_compo == 'tool':
         assert debug_getxyz_misgs
+        assert misgs_model != None
         means3D_final,rotations_final = get_final_attr_tool(misgs_model=misgs_model,viewpoint_camera=viewpoint_camera)
         scales_final = scales
         opacity_final = opacity
