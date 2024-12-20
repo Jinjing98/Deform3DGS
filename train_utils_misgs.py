@@ -193,7 +193,7 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         
         if cfg.model.nsg.include_tissue and cfg.model.nsg.include_obj:
             debug_fuse = False
-            # debug_fuse = True
+            debug_fuse = True
             compo_all_gs_ordered=['tissue']
             compo_all_gs_ordered=['obj_tool1']
             compo_all_gs_ordered=['tissue','obj_tool1']
@@ -244,9 +244,9 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
                     + optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), gt_image.to(torch.double), \
                                                             mask=tool_mask))
-                # loss += tool_loss
+                loss += tool_loss
                 # loss = 0*loss+tool_loss
-                loss = loss+tool_loss*0
+                # loss = loss+tool_loss*0
             else:
 
                 Ll1 = l1_loss(image_tissue, gt_image, tissue_mask)
@@ -409,6 +409,11 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
                 scene.save(iteration,stage  ='')
                 
+
+            # todo:xyz_gradient_accum
+            # problem lies in fusing set_max_radii2D_all_models and add_densification_stats_all_models of misgs model with its own function
+            # also check out where else can leverage the idx dict properly
+
             # Densification
             if iteration < optim_args.densify_until_iter :
                 # Keep track of max radii in image-space for pruning

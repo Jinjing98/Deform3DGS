@@ -36,7 +36,7 @@ OptimizationParams = dict(
     #jj
     densification_interval = 100,
     densify_from_iter = 500,
-    densify_until_iter = 15_000,
+    densify_until_iter = -1,#15_000,
     densify_grad_threshold_coarse = 0.0002,
     densify_grad_threshold_fine_init = 0.0002,
     densify_grad_threshold_after = 0.0002,

@@ -605,7 +605,7 @@ class MisGaussianModel(nn.Module):
             # assert 0,'not checked'
             viewspace_point_tensor_grad = viewspace_point_tensor.grad
             model: GaussianModelBase = getattr(self, model_name)
-            print('debug',viewspace_point_tensor_grad,model.xyz_gradient_accum,visibility_filter)
+            print(f'debug {model_name}',viewspace_point_tensor_grad,model.xyz_gradient_accum,visibility_filter)
             model.xyz_gradient_accum[visibility_filter, 0:1] += torch.norm(viewspace_point_tensor_grad[visibility_filter, :2], dim=-1, keepdim=True)
             model.xyz_gradient_accum[visibility_filter, 1:2] += torch.norm(viewspace_point_tensor_grad[visibility_filter, 2:], dim=-1, keepdim=True)
             model.denom[visibility_filter] += 1
