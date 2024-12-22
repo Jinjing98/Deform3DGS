@@ -587,25 +587,32 @@ class MisGaussianModel(nn.Module):
                 model.max_radii2D[visibility_filter], radii[visibility_filter])
         
     
-    def add_densification_stats_all_models(self, viewspace_point_tensors= {}, visibility_filters= {}, model_names = []):
+    def add_densification_stats_all_models(self, viewspace_point_tensors= {}, visibility_filters= {}, model_names = [],
+                                           compo_all_gs_ordered_idx = None,):
         '''
         already internnallly performed by the densify and prune of tissue model
         '''
 
-        assert len(viewspace_point_tensors.keys()) == len(visibility_filters.keys())
         assert len(visibility_filters.keys()) == len(model_names)
+        if isinstance(viewspace_point_tensors,dict):
+            render_once = False
+        else:
+            render_once = True
+            assert compo_all_gs_ordered_idx is not None
 
-#        for viewspace_point_tensor, visibility_filter, model_name in zip(viewspace_point_tensors,visibility_filters,model_names):
-
+        if render_once:
+            all_viewspace_point_tensors_grad = viewspace_point_tensors.grad
         for model_name in model_names:
             visibility_filter = visibility_filters[model_name]
-            viewspace_point_tensor = viewspace_point_tensors[model_name]
-
-        #for viewspace_point_tensor, visibility_filter, model_name in zip(viewspace_point_tensors,visibility_filters,model_names):
-            # assert 0,'not checked'
-            viewspace_point_tensor_grad = viewspace_point_tensor.grad
+            if render_once:
+                start_idx, end_idx = compo_all_gs_ordered_idx[model_name]
+                viewspace_point_tensor_grad = all_viewspace_point_tensors_grad[start_idx:(end_idx+1)]
+            else:
+                assert len(viewspace_point_tensors.keys()) == len(visibility_filters.keys()),f"{viewspace_point_tensors.keys()} {visibility_filters.keys()}"
+                viewspace_point_tensor = viewspace_point_tensors[model_name]
+                viewspace_point_tensor_grad = viewspace_point_tensor.grad
             model: GaussianModelBase = getattr(self, model_name)
-            print(f'debug {model_name}',viewspace_point_tensor_grad,model.xyz_gradient_accum,visibility_filter)
+            assert viewspace_point_tensor_grad!=None
             model.xyz_gradient_accum[visibility_filter, 0:1] += torch.norm(viewspace_point_tensor_grad[visibility_filter, :2], dim=-1, keepdim=True)
             model.xyz_gradient_accum[visibility_filter, 1:2] += torch.norm(viewspace_point_tensor_grad[visibility_filter, 2:], dim=-1, keepdim=True)
             model.denom[visibility_filter] += 1
