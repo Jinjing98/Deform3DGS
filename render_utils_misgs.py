@@ -180,6 +180,7 @@ def render_sets_misgs(
                         load_which_pcd=load_which_pcd)
         # render_set_func = render_set if which_model in ['tissue'] else render_set_misgs
     elif which_model == 'all':
+        assert 0, 'to do'
         load_which_pcd = 'point_cloud'
         scene = Scene(mod_stree_param,load_other_obj_meta=True,new_cfg=cfg)
         controller = MisGaussianModel(metadata=scene.getSceneMetaData(),

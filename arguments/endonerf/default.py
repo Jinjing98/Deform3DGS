@@ -13,7 +13,7 @@ ModelParams = dict(
     #    support run for muti splits
     #    support hard changes iters
     init_mode = 'skipMAPF',#'MAPF', #'skipMAPF' #rand
-    tool_mask = 'nouse', #'use'(default) 'inverse' 'nouse'
+    tool_mask = 'use', #'use'(default) 'inverse' 'nouse'
     load_cotrackerPnpPose = True,#True #False
 
 )
