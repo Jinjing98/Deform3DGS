@@ -70,72 +70,82 @@ def render_flow(viewpoint_camera,
                  override_color = None,
                  debug_getxyz_misgs = False,
                  misgs_model = None,
-                 which_compo = 'tissue',
-                 compo_all_gs_ordered = ['tissue','obj_tool1'],
+                 single_compo_or_list = 'tissue',
                  ):
     """
     Render the scene. 
     
     Background tensor (bg_color) must be on GPU!
     """
-    assert which_compo in ['tool','tissue','all']
-
-    if which_compo == 'all':
+    if isinstance(single_compo_or_list,list):
         assert pc == None
-        assert compo_all_gs_ordered == ['tissue','obj_tool1']
-        # assert isinstance(pc,list)
-    elif which_compo in ['tool']:
+        for name in single_compo_or_list:
+            assert name in ['tissue','obj_tool1']
+    elif single_compo_or_list in ['tool']:
         assert isinstance(pc,ToolModel) 
-    elif which_compo in ['tissue']:
+    elif single_compo_or_list in ['tissue']:
         assert isinstance(pc,TissueGaussianModel)
+    else:
+        assert 0,single_compo_or_list
 
     
     # Create zero tensor. We will use it to make pytorch return gradients of the 2D (screen-space) means
     # if isinstance(pc,list):
-    if which_compo=='all':
+    if isinstance(single_compo_or_list,list):
         assert misgs_model != None
-        assert isinstance(compo_all_gs_ordered,list)
-
-        screenspace_points_list = []
-        means2D_list = []
+        assert isinstance(single_compo_or_list,list)
+        # screenspace_points_list = []
+        # means2D_list = []
         opacity_list = []
         scales_list = []
         sh_degree_list = []#jj add to get rid of pc
         shs_feature_list = [] # jj add to get rid of pc
         
-        compo_all_gs_ordered_idx = {}
+        single_compo_or_list_idx = {}
         tgt_rendered_gs_idx = 0
-        for gs_compo_name in compo_all_gs_ordered:
+        for gs_compo_name in single_compo_or_list:
             pc_i = getattr(misgs_model,gs_compo_name)
             #record the index of the compo
-            compo_all_gs_ordered_idx[gs_compo_name] = [tgt_rendered_gs_idx, tgt_rendered_gs_idx+pc_i.get_xyz.shape[0]]
+            single_compo_or_list_idx[gs_compo_name] = [tgt_rendered_gs_idx, tgt_rendered_gs_idx+pc_i.get_xyz.shape[0]-1]
             tgt_rendered_gs_idx += pc_i.get_xyz.shape[0]
-
-            screenspace_points = torch.zeros_like(pc_i.get_xyz, dtype=pc_i.get_xyz.dtype, requires_grad=True, device="cuda") + 0
-            try:
-                screenspace_points.retain_grad()
-            except:
-                pass
-            means2D = screenspace_points
+            # we did this outside of the loop
+            # get one single screenspace points outside the loop
+            # screenspace_points = torch.zeros_like(pc_i.get_xyz, dtype=pc_i.get_xyz.dtype, requires_grad=True, device="cuda") + 0
+            # try:
+            #     screenspace_points.retain_grad()
+            # except:
+            #     assert 0
+            #     pass
+            # means2D = screenspace_points
             opacity = pc_i._opacity
             scales = pc_i._scaling
             sh_degree = pc_i.active_sh_degree#jj
             shs_feature = pc_i.get_features #jj
             
-            screenspace_points_list.append(screenspace_points)
-            means2D_list.append(means2D)
+            # screenspace_points_list.append(screenspace_points)
+            # means2D_list.append(means2D)
+            # screenspace_points_list.append(screenspace_points_i)
+            # means2D_list.append(means2D_i)
             opacity_list.append(opacity)
             scales_list.append(scales)
             sh_degree_list.append(sh_degree)#jj
             shs_feature_list.append(shs_feature)#jj
         
-        #stack in the order of compo_all_gs_ordered
-        screenspace_points = torch.vstack(screenspace_points_list)
-        means2D = torch.vstack(means2D_list)
+        #stack in the order of single_compo_or_list
+        # screenspace_points = torch.vstack(screenspace_points_list)
+        # means2D = torch.vstack(means2D_list)
 
+        # init screenspace_points and means2D for saving grad in NDC space
+        total_gs_num = torch.vstack(scales_list).shape[0]
+        screenspace_points = torch.zeros((total_gs_num,3), dtype=pc_i.get_xyz.dtype, requires_grad=True, device="cuda") + 0
+        try:
+            screenspace_points.retain_grad()
+        except:
+            pass
+        means2D = screenspace_points
         opacity = torch.vstack(opacity_list)
         scales = torch.vstack(scales_list)
-        
+
         assert len(np.unique(sh_degree_list))==1,'tisseu and tool sh_degree are both 0 for each compo pc'
         sh_degree = np.unique(sh_degree_list)[0]#jj
         shs_feature = torch.vstack(shs_feature_list)#jj
@@ -146,7 +156,7 @@ def render_flow(viewpoint_camera,
         pc_opacity_activation = pc_i.opacity_activation
             
     else:
-        compo_all_gs_ordered_idx = None
+        single_compo_or_list_idx = None
 
         screenspace_points = torch.zeros_like(pc.get_xyz, dtype=pc.get_xyz.dtype, requires_grad=True, device="cuda") + 0
         try:
@@ -195,7 +205,8 @@ def render_flow(viewpoint_camera,
     else:
         cov3D_precomp = None
     #//////////////fdm
-    if which_compo == 'tissue':
+    if single_compo_or_list == 'tissue':
+        assert isinstance(pc,TissueGaussianModel) 
         # sh_degree = pc.active_sh_degree,
         # print('debug*************tissue*',pc.active_sh_degree)
         means3D_final,rotations_final,scales_final,opacity_final = get_final_attr_tissue(pc = pc,
@@ -203,14 +214,16 @@ def render_flow(viewpoint_camera,
                                                                                          initial_scales = scales,
                                                                                          initial_opacity= opacity,
                                                                                          )
-    elif which_compo == 'tool':
+    elif single_compo_or_list == 'tool':
+        assert isinstance(pc,ToolModel) 
         # print('debug*************tool*',pc.active_sh_degree)
         assert debug_getxyz_misgs
         assert misgs_model != None
         means3D_final,rotations_final = get_final_attr_tool(misgs_model=misgs_model,viewpoint_camera=viewpoint_camera)
         scales_final = scales
         opacity_final = opacity
-    elif which_compo == 'all':
+    elif isinstance(single_compo_or_list,list):
+
         # assert debug_getxyz_misgs
         assert misgs_model != None
         means3D_final_list = []
@@ -218,24 +231,13 @@ def render_flow(viewpoint_camera,
         scales_final_list = []
         opacity_final_list = []
 
-        for gs_compo_name in compo_all_gs_ordered:
-            # notice have to follow the order of compo_all_gs_ordered as done for means2D
+        for gs_compo_name in single_compo_or_list:
+            # notice have to follow the order of single_compo_or_list as done for means2D
             pc_i = getattr(misgs_model,gs_compo_name)
-            start_idx, end_idx = compo_all_gs_ordered_idx[gs_compo_name]
+            start_idx, end_idx = single_compo_or_list_idx[gs_compo_name]
 
-            # compo_all_gs_ordered_idx
-
-
-            # screenspace_points = torch.vstack(screenspace_points_list)
-            # means2D = torch.vstack(means2D_list)
-            # opacity = torch.vstack(opacity_list)
-            # scales = torch.vstack(scales_list)
-            # assert len(np.unique(sh_degree_list))==1,'tisseu and tool sh_degree are both 0 for each compo pc'
-            # sh_degree = np.unique(sh_degree_list)[0]#jj
-            # shs_feature = torch.vstack(shs_feature_list)#jj
-
-            scales_i = scales[start_idx:end_idx]
-            opacity_i = opacity[start_idx:end_idx]
+            scales_i = scales[start_idx:(end_idx+1)]
+            opacity_i = opacity[start_idx:(end_idx+1)]
             if isinstance(pc_i,ToolModel):
                 means3D_final,rotations_final = get_final_attr_tool(misgs_model=misgs_model,viewpoint_camera=viewpoint_camera)
                 scales_final = scales_i
@@ -243,11 +245,8 @@ def render_flow(viewpoint_camera,
             elif isinstance(pc_i,TissueGaussianModel):
                 means3D_final,rotations_final,scales_final,opacity_final = get_final_attr_tissue(pc = pc_i,
                                                                                                  viewpoint_camera_time = viewpoint_camera.time,
-                                                                                                #  initial_scales = scales[start_idx, end_idx],
                                                                                                  initial_scales = scales_i,
-                                                                                                #  initial_opacity= opacity,
                                                                                                  initial_opacity= opacity_i,
-                                                                                                #  initial_opacity= opacity_list[start_idx:end_idx],
                                                                                                  )
             else:
                 assert 0
@@ -263,13 +262,6 @@ def render_flow(viewpoint_camera,
     else:
         assert 0
 
-
-
-
-
-    # scales_final = pc.scaling_activation(scales_final)
-    # rotations_final = pc.rotation_activation(rotations_final)
-    # opacity_final = pc.opacity_activation(opacity_final)
     scales_final = pc_scaling_activation(scales_final)
     rotations_final = pc_rotation_activation(rotations_final)
     opacity_final = pc_opacity_activation(opacity_final)
@@ -310,30 +302,22 @@ def render_flow(viewpoint_camera,
     vis_img_debug = False
     vis_img_debug = True
     if vis_img_debug:
-        vis_torch_img(rendered_image=rendered_image,topic = f'compo_{which_compo}')
-
-    # Those Gaussians that were frustum culled or had a radius of 0 were not visible.
-    # They will be excluded from value updates used in the splitting criteria.
-    # if which_compo == 'all':
-    #     tissue_opt = {
-    #                 # "render": rendered_image,
-    #                 # "depth": depth,
-    #                 "viewspace_points": screenspace_points,
-    #                 "visibility_filter" : radii > 0,
-    #                 "radii": radii,}
-    #     tool_opt = {
-    #                 # "render": rendered_image,
-    #                 # "depth": depth,
-    #                 "viewspace_points": screenspace_points,
-    #                 "visibility_filter" : radii > 0,
-    #                 "radii": radii,}
+        if isinstance(single_compo_or_list,list):
+            window_topic = f'compo_{single_compo_or_list}_renderObjsOnce'
+        else:
+            window_topic = f'compo_{single_compo_or_list}_renderObjsSeperately'
+        vis_torch_img(rendered_image=rendered_image,
+                      topic=window_topic,
+                    #   topic = f'compo_{single_compo_or_list}_{single_compo_or_list}',
+                    #   save_path = None,
+                      )
 
     # else:
     return {"render": rendered_image,
             "depth": depth,
             "viewspace_points": screenspace_points,
             "visibility_filter" : radii > 0,
-            "radii": radii,}, compo_all_gs_ordered_idx
+            "radii": radii,}, single_compo_or_list_idx
 
 
 
