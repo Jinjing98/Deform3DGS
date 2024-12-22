@@ -15,7 +15,7 @@ from scene import Scene
 import os
 from tqdm import tqdm
 from os import makedirs
-from gaussian_renderer import render_flow as render
+from gaussian_renderer import render_flow as fdm_render
 import torchvision
 from utils.general_utils import safe_state
 from argparse import ArgumentParser
@@ -34,9 +34,10 @@ def render_set_misgs(model_path, name, iteration, views, gaussians, pipeline, ba
     ):
     from render import reconstruct_point_cloud
     if which_model == 'tissue':
-        render_func = render
+        render_func = fdm_render
     elif which_model == 'obj_tool1':
         from gaussian_renderer.tool_renderer import tool_render
+        render_func = fdm_render
         render_func = tool_render
         assert 0,'to do'
     elif which_model == 'all':

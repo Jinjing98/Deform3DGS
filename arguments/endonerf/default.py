@@ -13,7 +13,7 @@ ModelParams = dict(
     #    support run for muti splits
     #    support hard changes iters
     init_mode = 'skipMAPF',#'MAPF', #'skipMAPF' #rand
-    tool_mask = 'use', #'use'(default) 'inverse' 'nouse'
+    tool_mask = 'nouse', #'use'(default) 'inverse' 'nouse'
     load_cotrackerPnpPose = True,#True #False
 
 )
@@ -36,7 +36,8 @@ OptimizationParams = dict(
     #jj
     densification_interval = 100,
     densify_from_iter = 500,
-    densify_until_iter = -1,#15_000,
+    # densify_until_iter = -1,#700,#15_000,
+    densify_until_iter = 700,#15_000,
     densify_grad_threshold_coarse = 0.0002,
     densify_grad_threshold_fine_init = 0.0002,
     densify_grad_threshold_after = 0.0002,

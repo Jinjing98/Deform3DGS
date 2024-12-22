@@ -15,7 +15,7 @@ from scene import Scene
 import os
 from tqdm import tqdm
 from os import makedirs
-from gaussian_renderer import render_flow as render
+from gaussian_renderer import render_flow as fdm_render
 import torchvision
 from utils.general_utils import safe_state
 from argparse import ArgumentParser
@@ -52,7 +52,8 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         stage = 'coarse' if no_fine else 'fine'
-        rendering = render(view, gaussians, pipeline, background)
+        rendering,_ = fdm_render(view, gaussians, pipeline, background,
+                           single_compo_or_list="tissue")
         render_depths.append(rendering["depth"].cpu())
         render_images.append(rendering["render"].cpu())
         if name in ["train", "test", "video"]:
@@ -70,7 +71,7 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
                 if idx == 0 and i == 0:
                     time1 = time()
                 stage = 'coarse' if no_fine else 'fine'
-                rendering = render(view, gaussians, pipeline, background)
+                rendering,_ = fdm_render(view, gaussians, pipeline, background)
         time2=time()
         print("FPS:",(len(views)-1)*test_times/(time2-time1))
     

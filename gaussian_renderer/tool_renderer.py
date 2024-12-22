@@ -128,9 +128,9 @@ def tool_render(viewpoint_camera,
     
     from utils.scene_utils import vis_torch_img
     vis_img_debug = False
-    vis_img_debug = True
+    # vis_img_debug = True
     if vis_img_debug:
-        vis_torch_img(rendered_image=rendered_image,topic = 'tool')
+        vis_torch_img(rendered_image=rendered_image,topic = 'tool_alone_render(the func has been incorparated in our dfm_render,remain it for debug)')
 
         # import cv2
         # import numpy as np

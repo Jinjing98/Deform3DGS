@@ -13,7 +13,7 @@ import os
 import torch
 from random import randint
 from utils.loss_utils import l1_loss
-from gaussian_renderer import render_flow as render
+from gaussian_renderer import render_flow as fdm_render
 
 import sys
 from scene import  Scene
@@ -93,7 +93,8 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
         viewspace_point_tensor_list = []
         
         for viewpoint_cam in viewpoint_cams:
-            render_pkg = render(viewpoint_cam, gaussians, pipe, background)
+            render_pkg,_ = fdm_render(viewpoint_cam, gaussians, pipe, background,
+                                single_compo_or_list='tissue')
             image, depth, viewspace_point_tensor, visibility_filter, radii = \
                 render_pkg["render"], render_pkg["depth"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
             gt_image = viewpoint_cam.original_image.cuda().float()
@@ -316,9 +317,11 @@ if __name__ == "__main__":
     torch.cuda.empty_cache()
     use_stree_grouping_strategy = True
     # use_stree_grouping_strategy = False
+
     if use_stree_grouping_strategy:
         use_streetgs_render = True #fail
         use_streetgs_render = False
+
 
     parser = ArgumentParser(description="Training script parameters")
     setup_seed(6666)
@@ -351,6 +354,8 @@ if __name__ == "__main__":
         if hasattr(args,'init_mode'):
             expname_append += f'_{args.init_mode}'
         if use_stree_grouping_strategy:
+            assert args.tool_mask == 'use',f' for misgs,we let tool_mask be use n get all masks'
+
             #pose related setting
             expname_append += f'_{args.track_warmup_steps}_extent{args.camera_extent}_space{args.obj_pose_rot_optim_space}_{args.obj_pose_init}init'
 

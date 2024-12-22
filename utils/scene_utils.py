@@ -155,7 +155,7 @@ def vis_torch_img(rendered_image,topic = ''):
     rendered_image_vis = (rendered_image_vis.numpy()*255).astype(np.uint8)
     rendered_image_vis = cv2.cvtColor(rendered_image_vis, cv2.COLOR_RGB2BGR)
     # Display the image using OpenCV
-    print('**************************************************')
+    # print('**************************************************')
     cv2.imshow(f"{topic}", rendered_image_vis)
     cv2.waitKey(1)
     if 0xFF == ord('q'):  # You can replace 'q' with any key you want
