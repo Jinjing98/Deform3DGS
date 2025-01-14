@@ -91,6 +91,7 @@ def render_set_misgs(model_path, name, iteration, views, gaussians, pipeline, ba
     
     if render_test:
         test_times = 20
+        test_times = 1
         for i in range(test_times):
             for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
                 if idx == 0 and i == 0:

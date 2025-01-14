@@ -270,10 +270,12 @@ class ToolModel:
         self._deformation_table = torch.gt(torch.ones((self.get_xyz.shape[0]),device="cuda"),0)
         if os.path.exists(os.path.join(path, "deformation_table.pth")):
             self._deformation_table = torch.load(os.path.join(path, "deformation_table.pth"),map_location="cuda")
-            
+            assert 0,f'not exist'
+
         self._deformation_accum = torch.zeros((self.get_xyz.shape[0],3),device="cuda")
         if os.path.exists(os.path.join(path, "deformation_accum.pth")):
             self._deformation_accum = torch.load(os.path.join(path, "deformation_accum.pth"),map_location="cuda")
+            assert 0,f'not exist'
         
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
@@ -697,6 +699,7 @@ class ToolModel:
     # FDM added
     @torch.no_grad()
     def update_deformation_table(self,threshold):
+        assert 0
         # print("origin deformation point nums:",self._deformation_table.sum())
         self._deformation_table = torch.gt(self._deformation_accum.max(dim=-1).values/100,threshold)
         
