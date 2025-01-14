@@ -53,7 +53,8 @@ class ToolPose(nn.Module):
             self.opt_trans = nn.Parameter(torch.zeros_like(self.input_trans)).requires_grad_(True).to(self.input_trans.device) 
             f_num,obj_num,_  = self.opt_trans.shape
             self.opt_rots_rpy = nn.Parameter(torch.zeros([f_num,obj_num,3],
-                                                         device = self.input_trans.device)).requires_grad_(True) 
+                                                         device = self.input_trans.device)).requires_grad_(True)\
+                                                            .to(self.opt_trans.device).to(self.opt_trans.dtype)  
         else:
             assert 0, NotImplementedError
 
@@ -122,6 +123,9 @@ class ToolPose(nn.Module):
         # return self.input_trans[frame_idx, track_id]
         trans = self.opt_trans[frame_idx, track_id] 
         # print(f'debug opt_trans {frame_idx}: all_0?{not trans.any()} {trans}')
+        # if frame_idx == 20:
+            # pass
+            # print("debug ***********opt_trans",frame_idx,"delta",trans,"input",self.input_trans[frame_idx, track_id])
         trans = trans + self.input_trans[frame_idx, track_id] 
         return trans
 
@@ -157,6 +161,35 @@ class ToolPose(nn.Module):
             return torch.Tensor([w,x,y,z]).to(roll_pitch_yaw.device)
             return w, x, y, z
 
+        def euler_to_quaternion_torch(roll_pitch_yaw):
+            """
+            Convert Euler angles (roll, pitch, yaw) to a quaternion (w, x, y, z).
+            Roll, pitch, and yaw should be in radians.
+            """
+            assert roll_pitch_yaw.shape == torch.Size([3])
+            roll,pitch,yaw = roll_pitch_yaw
+            # Compute half angles
+            cy = torch.cos(yaw * 0.5)
+            sy = torch.sin(yaw * 0.5)
+            cp = torch.cos(pitch * 0.5)
+            sp = torch.sin(pitch * 0.5)
+            cr = torch.cos(roll * 0.5)
+            sr = torch.sin(roll * 0.5)
+
+            # Compute quaternion
+            w = cr * cp * cy + sr * sp * sy
+            x = sr * cp * cy - cr * sp * sy
+            y = cr * sp * cy + sr * cp * sy
+            z = cr * cp * sy - sr * sp * cy
+
+            # quant = torch.zeros_like(torch.Tensor([w,x,y,z])).to(roll_pitch_yaw.device)
+            # quant.requires_grad = True
+            # quant[0:4] = torch.Tensor([w,x,y,z]).to(roll_pitch_yaw.device)
+            # return quant
+            return torch.stack((w, x, y, z), dim=-1)
+            return torch.Tensor([w,x,y,z]).to(roll_pitch_yaw.device)
+            return w, x, y, z
+
 
         # Example usage:
         # roll = 0.1  # radians
@@ -167,10 +200,14 @@ class ToolPose(nn.Module):
         cam_timestamp = camera.meta['timestamp']
         frame_idx = self.timestamps.index(cam_timestamp)
         roll_pitch_yaw = self.opt_rots_rpy[frame_idx,track_id]
-        quaternion = euler_to_quaternion(roll_pitch_yaw)
+        # quaternion = euler_to_quaternion(roll_pitch_yaw)
+        quaternion = euler_to_quaternion_torch(roll_pitch_yaw)
+
         # roll_pitch_yaw_input = self.input_rots_rpy[frame_idx,track_id]
         # quaternion_input = euler_to_quaternion(roll_pitch_yaw_input)
         quaternion_input = self.input_rots_quat[frame_idx,track_id]
+        # if frame_idx == 20:
+            # print("debug ***********opt_rots_rpy",frame_idx,"delta",quaternion,"input",quaternion_input)
         quaternion = quaternion_raw_multiply(quaternion_input.unsqueeze(0), 
                                     quaternion.unsqueeze(0)).squeeze(0)
         # print("Quaternion (w, x, y, z):", quaternion)

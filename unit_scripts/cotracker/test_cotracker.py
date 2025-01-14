@@ -26,11 +26,11 @@ if __name__== "__main__":
 
     data_piece = 'P2_7_455_465'
     # data_piece = 'P2_7_455_480'
-    # data_piece = 'P2_7_1264_1289'
     # data_piece = 'P2_7_1279_1289'
     # data_piece = 'P2_7_1653_1678'
     data_piece = 'P2_6_11070_11095'
     data_piece = 'P2_7_170_195'
+    data_piece = 'P2_7_1264_1289'
     if read_input_imgs_from_which == 'video':
         exp_name = '12-17_09-53-45_use_skipMAPF_0_extent10_SHORT'
         exp_name = '12-17_09-53-45_use_skipMAPF_0_extent10_0init_REF_SHORT'
