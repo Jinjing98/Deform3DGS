@@ -260,8 +260,8 @@ def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, c
                          gaussians, scene, tb_writer, opt.iterations,timer)
 
 def prepare_output_and_logger(model_path,write_args = None):  
-    if write_args.disable_tb=='Y':
-        return None
+    # if write_args.disable_tb=='Y':
+    #     return None
 
     if not model_path:
         assert 0, model_path
@@ -270,6 +270,11 @@ def prepare_output_and_logger(model_path,write_args = None):
     with open(os.path.join(model_path, "cfg_args"), 'w') as cfg_log_f:
         cfg_log_f.write(str(Namespace(**vars(write_args))))
     tb_writer = None
+    
+    if write_args.disable_tb=='Y':
+        return None
+
+
     if TENSORBOARD_FOUND:
         tb_writer = SummaryWriter(model_path)
     else:
@@ -316,7 +321,7 @@ if __name__ == "__main__":
     # torch.set_default_tensor_type('torch.FloatTensor')
     torch.cuda.empty_cache()
     use_stree_grouping_strategy = True
-    use_stree_grouping_strategy = False
+    # use_stree_grouping_strategy = False
 
     if use_stree_grouping_strategy:
         use_streetgs_render = True #fail
