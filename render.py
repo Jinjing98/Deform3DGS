@@ -30,8 +30,71 @@ import cv2
 
 to8b = lambda x : (255*np.clip(x.cpu().numpy(),0,1)).astype(np.uint8)
 
+
+def fdm_render_offline(view, gaussians, pipeline, background,
+                        controller=None, misgs_cfg=None,
+                        offline_target='tissue'):
+    '''
+    use controller None or not to decide which way'''
+    if controller==None:    
+        assert offline_target == 'tissue'
+        rendering,_ = fdm_render(view, gaussians, pipeline, background,
+                    single_compo_or_list=offline_target,
+                    )
+    # elif offline_target == 'tool':
+    else:
+        assert misgs_cfg!= None 
+        # assert controller!= None            
+        controller.set_visibility(include_list=list(set(controller.model_name_id.keys()) ))
+        for model_name in controller.model_name_id.keys():
+            if controller.get_visibility(model_name=model_name):
+                if offline_target == 'tool':
+                    sub_gs_model = None
+                    if "tool" in model_name:
+                        sub_gs_model = getattr(controller, model_name)
+                        break
+                elif offline_target == 'tissue':
+                    sub_gs_model = None
+                    if "tissue" in model_name:
+                        sub_gs_model = getattr(controller, model_name)
+                        break
+                elif isinstance(offline_target,list):
+                    sub_gs_model = None
+                    # if model_name in offline_target:
+                        # sub_gs_model = getattr(controller, model_name)
+                        # break
+                else:
+                    assert 0,offline_target
+            # print(f"///////{offline_target}/////",model_name,controller.get_visibility(model_name=model_name),sub_gs_model)
+        if isinstance(offline_target,list):
+            assert sub_gs_model==None
+        else:
+            assert sub_gs_model!=None
+        rendering,_= fdm_render(view, sub_gs_model, misgs_cfg.render, background,
+                                debug_getxyz_misgs = True,
+                                misgs_model = controller,
+                                single_compo_or_list=offline_target,
+                                )
+    # elif offline_target == 'list':
+    #     rendering,_ = fdm_render(view, gaussians, pipeline, background,
+    #                 single_compo_or_list=['tissue','obj_tool1'])
+    # else:
+    #     assert 0
+    return rendering
+
+
+
+
+
+
 def render_set(model_path, name, iteration, views, gaussians, pipeline, background,\
-    no_fine, render_test=False, reconstruct=False, crop_size=0):
+    no_fine, render_test=False, reconstruct=False, crop_size=0,
+    controller=None, misgs_cfg = None,
+    offline_target=None,
+    # # offline_target='tissue',
+    # offline_target='tool',
+    # # offline_target=['tissue','obj_tool1'],
+    ):
     render_path = os.path.join(model_path, name, "ours_{}".format(iteration), "renders")
     depth_path = os.path.join(model_path, name, "ours_{}".format(iteration), "depth")
     gts_path = os.path.join(model_path, name, "ours_{}".format(iteration), "gt")
@@ -52,8 +115,12 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 
     for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
         stage = 'coarse' if no_fine else 'fine'
-        rendering,_ = fdm_render(view, gaussians, pipeline, background,
-                           single_compo_or_list="tissue")
+
+        rendering = fdm_render_offline(view, gaussians, pipeline, background,
+                        controller=controller, 
+                        misgs_cfg=misgs_cfg,
+                        offline_target=offline_target)
+
         render_depths.append(rendering["depth"].cpu())
         render_images.append(rendering["render"].cpu())
         if name in ["train", "test", "video"]:
@@ -65,13 +132,20 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
             gt_depths.append(gt_depth)
     
     if render_test:
-        test_times = 20
+        test_times = 20 #to compute the avg time
+        test_times = 1
         for i in range(test_times):
             for idx, view in enumerate(tqdm(views, desc="Rendering progress")):
                 if idx == 0 and i == 0:
                     time1 = time()
                 stage = 'coarse' if no_fine else 'fine'
-                rendering,_ = fdm_render(view, gaussians, pipeline, background)
+                # rendering,_ = fdm_render(view, gaussians, pipeline, background)
+                rendering = fdm_render_offline(view, gaussians, pipeline, background,
+                                controller=controller, 
+                                misgs_cfg=misgs_cfg,
+                                offline_target=offline_target)
+
+
         time2=time()
         print("FPS:",(len(views)-1)*test_times/(time2-time1))
     
@@ -133,24 +207,43 @@ def render_set(model_path, name, iteration, views, gaussians, pipeline, backgrou
 def render_sets(dataset : ModelParams, hyperparam, iteration : int, pipeline : PipelineParams, 
                 skip_train : bool, skip_test : bool, skip_video: bool, 
                 reconstruct_train: bool, reconstruct_test: bool, reconstruct_video: bool,
+                misgs_cfg = None,controller=None,
+                offline_target='tissue',
                 ):
     with torch.no_grad():
-        gaussians = TissueGaussianModel(dataset.sh_degree, hyperparam)
+        # gaussians = TissueGaussianModel(dataset.sh_degree, hyperparam)
         # scene = Scene(dataset, gaussians, load_iteration=iteration)
         # 1 step to two
         scene = Scene(dataset)
-        scene.gs_init(gaussians_or_controller=gaussians, load_iteration=iteration,
-                      reset_camera_extent=dataset.camera_extent)
+        if controller is None:
+            gaussians = TissueGaussianModel(dataset.sh_degree, hyperparam)
+            scene.gs_init(gaussians_or_controller=gaussians, load_iteration=iteration,
+                          reset_camera_extent=dataset.camera_extent)
+        else:
+            # gaussians = TissueGaussianModel(dataset.sh_degree, hyperparam)
+            scene.gs_init(gaussians_or_controller=controller, load_iteration=iteration,
+                          reset_camera_extent=dataset.camera_extent)
+            gaussians = None
+
 
         bg_color = [1,1,1] if dataset.white_background else [0, 0, 0]
         background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
         
         if not skip_train:
-            render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), gaussians, pipeline, background, False, reconstruct=reconstruct_train)
+            render_set(dataset.model_path, "train", scene.loaded_iter, scene.getTrainCameras(), 
+                       gaussians, pipeline, background, False, reconstruct=reconstruct_train,
+                       misgs_cfg=misgs_cfg,controller=controller,
+                       offline_target=offline_target)
         if not skip_test:
-            render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), gaussians, pipeline, background, False, reconstruct=reconstruct_test, crop_size=20)
+            render_set(dataset.model_path, "test", scene.loaded_iter, scene.getTestCameras(), 
+                       gaussians, pipeline, background, False, reconstruct=reconstruct_test, crop_size=20,
+                       misgs_cfg=misgs_cfg,controller=controller,
+                       offline_target=offline_target)
         if not skip_video:
-            render_set(dataset.model_path,"video",scene.loaded_iter, scene.getVideoCameras(),gaussians,pipeline,background, False, render_test=True, reconstruct=reconstruct_video, crop_size=20)
+            render_set(dataset.model_path,"video",scene.loaded_iter, scene.getVideoCameras(),
+                       gaussians,pipeline,background, False, render_test=True, reconstruct=reconstruct_video, crop_size=20,
+                       misgs_cfg=misgs_cfg,controller=controller,
+                       offline_target=offline_target)
 
 def reconstruct_point_cloud(images, masks, depths, camera_parameters, name, crop_left_size=0):
     import cv2
@@ -217,8 +310,13 @@ if __name__ == "__main__":
     parser.add_argument("--configs", type=str)
     args = get_combined_args(parser)
     print("Rendering ", args.model_path)
-    # render_misgs = True
-    render_misgs = False
+    render_with_misgs = False
+    render_with_misgs = True
+
+    # offline_target='tissue'
+    offline_target='tool'
+    # offline_target=['tissue','obj_tool1']
+
 
     # exp_time_args_file_name = 'exp_default.py'
     # if exp_time_args_file_name not in args.configs:
@@ -233,10 +331,32 @@ if __name__ == "__main__":
         args = merge_hparams(args, config)
     # Initialize system state (RNG)
     safe_state(args.quiet)
-    if not render_misgs:
+    if not render_with_misgs:
+        #use the FDM model to render
         render_sets(model.extract(args), hyperparam.extract(args), args.iteration, 
             pipeline.extract(args), 
             args.skip_train, args.skip_test, args.skip_video,
-            args.reconstruct_train,args.reconstruct_test,args.reconstruct_video)
+            args.reconstruct_train,args.reconstruct_test,args.reconstruct_video,
+            )
     else:
-        assert 0
+        #use the MisGS model to render
+        exp_time_cfg_file_name = 'configs/config_000000.yaml'
+        cfg_path = os.path.join(args.model_path,exp_time_cfg_file_name)
+        assert os.path.exists(cfg_path),f'not saved cfg during traing? {args.configs}'
+        from config.yacs import load_cfg
+        with open(cfg_path, 'r') as f:
+            misgs_cfg = load_cfg(f)
+        from scene.mis_gaussian_model import MisGaussianModel
+        scene = Scene(model.extract(args),load_other_obj_meta=True,new_cfg=misgs_cfg)
+        controller = MisGaussianModel(metadata=scene.getSceneMetaData(),
+                                    new_cfg=misgs_cfg)#nn.module instance
+
+        render_sets(model.extract(args), hyperparam.extract(args), args.iteration, 
+            pipeline.extract(args), 
+            args.skip_train, args.skip_test, args.skip_video,
+            args.reconstruct_train,args.reconstruct_test,args.reconstruct_video,
+            misgs_cfg=misgs_cfg,
+            controller=controller,
+            offline_target=offline_target,
+            )
+

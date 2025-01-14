@@ -278,8 +278,19 @@ class ToolModel:
         self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
 
 
-    def load_ply(self, path):
-        plydata = PlyData.read(path)
+
+    def load_ply(self, path = None,input_ply = None):
+
+        if path is None:
+            assert input_ply is not None
+            plydata = input_ply
+        else:
+            assert input_ply == None
+            plydata = PlyData.read(path)
+            # plydata = plydata.elements[0]
+
+    # def load_ply(self, path):
+        # plydata = PlyData.read(path)
 
         xyz = np.stack((np.asarray(plydata.elements[0]["x"]),
                         np.asarray(plydata.elements[0]["y"]),

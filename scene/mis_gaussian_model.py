@@ -206,10 +206,35 @@ class MisGaussianModel(nn.Module):
             if model_name in self.model_name_id.keys():
                 print('Loading model', model_name)
                 model: Union[GaussianModelBase,TissueGaussianModel] = getattr(self, model_name)
-                model.load_ply(path=None, input_ply=plydata)
-                plydata_list = PlyData.read(path).elements
+                model.load_ply(path=None, 
+                            #    input_ply=plydata,
+                               input_ply = PlyData([plydata]),
+                               )
+                # plydata_list = PlyData.read(path).elements
         self.active_sh_degree = self.max_sh_degree
   
+    def load_model(self, path):
+        for model_name in self.model_name_id.keys():
+            print('Loading model', model_name)
+            model: Union[GaussianModelBase,TissueGaussianModel] = getattr(self, model_name)
+            if isinstance(model,TissueGaussianModel):
+                model.load_model(path)
+            elif isinstance(model,ToolModel):
+                pass
+            else:
+                assert 0,model_name
+
+        # assert 0
+        # print("loading model from exists{}".format(path))
+        # self._deformation_table = torch.gt(torch.ones((self.get_xyz.shape[0]),device="cuda"),0)
+        # if os.path.exists(os.path.join(path, "deformation_table.pth")):
+        #     self._deformation_table = torch.load(os.path.join(path, "deformation_table.pth"),map_location="cuda")
+        # self._deformation_accum = torch.zeros((self.get_xyz.shape[0],3),device="cuda")
+        # if os.path.exists(os.path.join(path, "deformation_accum.pth")):
+        #     self._deformation_accum = torch.load(os.path.join(path, "deformation_accum.pth"),map_location="cuda")
+        # self.max_radii2D = torch.zeros((self.get_xyz.shape[0]), device="cuda")
+
+
     def load_state_dict(self, state_dict, exclude_list=[]):
         assert 0,'not tested'
         for model_name in self.model_name_id.keys():
@@ -304,6 +329,7 @@ class MisGaussianModel(nn.Module):
                 obj_model: ToolModel = getattr(self, obj_name)
                 track_id = obj_model.track_id
                 assert track_id==0
+                # tool model
                 obj_rot = self.poses_all_objs.get_tracking_rotation(track_id, self.viewpoint_camera)
                 # it will use the trans info of the next two frames
                 obj_trans = self.poses_all_objs.get_tracking_translation(track_id, self.viewpoint_camera)  
@@ -326,6 +352,7 @@ class MisGaussianModel(nn.Module):
             self.flip_mask = []
             for obj_name in self.graph_obj_list:
                 obj_model: ToolModel = getattr(self, obj_name)
+                # assert 0, f"{obj_name}{obj_model.get_xyz}{obj_model.get_xyz.shape}"
                 flip_mask = torch.zeros_like(obj_model.get_xyz[:, 0]).bool()
                 self.flip_mask.append(flip_mask)
             self.flip_mask = torch.cat(self.flip_mask, dim=0)   
