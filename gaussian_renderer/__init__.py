@@ -51,11 +51,12 @@ def get_final_attr_tissue(pc,viewpoint_camera_time, initial_scales,initial_opaci
     return means3D_final,rotations_final,scales_final,opacity_final
         
         
-def get_final_attr_tool(misgs_model,viewpoint_camera):
+def get_final_attr_tool(misgs_model,viewpoint_camera,tool_parse_cam_again):
     #udpate means_3d(xyz) and rotations
     include_list = list(set(misgs_model.model_name_id.keys()))
     misgs_model.set_visibility(include_list)# set the self.include_list for misgs_model
-    misgs_model.parse_camera(viewpoint_camera)# set the obj_rots/ graph_obj_list for misgs_model
+    if tool_parse_cam_again:
+        misgs_model.parse_camera(viewpoint_camera)# set the obj_rots/ graph_obj_list for misgs_model
     means3D_final = misgs_model.get_xyz_obj_only
     rotations_final = misgs_model.get_rotation_obj_only
     return means3D_final,rotations_final
@@ -71,6 +72,7 @@ def render_flow(viewpoint_camera,
                  debug_getxyz_misgs = False,
                  misgs_model = None,
                  single_compo_or_list = 'tissue',
+                 tool_parse_cam_again = True,
                  ):
     """
     Render the scene. 
@@ -219,7 +221,9 @@ def render_flow(viewpoint_camera,
         # print('debug*************tool*',pc.active_sh_degree)
         assert debug_getxyz_misgs
         assert misgs_model != None
-        means3D_final,rotations_final = get_final_attr_tool(misgs_model=misgs_model,viewpoint_camera=viewpoint_camera)
+        means3D_final,rotations_final = get_final_attr_tool(misgs_model=misgs_model,
+                                                            viewpoint_camera=viewpoint_camera,
+                                                            tool_parse_cam_again = tool_parse_cam_again)
         scales_final = scales
         opacity_final = opacity
     elif isinstance(single_compo_or_list,list):
@@ -239,7 +243,10 @@ def render_flow(viewpoint_camera,
             scales_i = scales[start_idx:(end_idx+1)]
             opacity_i = opacity[start_idx:(end_idx+1)]
             if isinstance(pc_i,ToolModel):
-                means3D_final,rotations_final = get_final_attr_tool(misgs_model=misgs_model,viewpoint_camera=viewpoint_camera)
+                # print('debug /// render_flow viewpoint_camera',viewpoint_camera.id)
+                means3D_final,rotations_final = get_final_attr_tool(misgs_model=misgs_model,
+                                                                    viewpoint_camera=viewpoint_camera,
+                                                                    tool_parse_cam_again = tool_parse_cam_again)
                 scales_final = scales_i
                 opacity_final = opacity_i
             elif isinstance(pc_i,TissueGaussianModel):

@@ -193,9 +193,9 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         renderOnce = False
         renderOnce = True        
         if renderOnce:
+            compo_all_gs_ordered=['tissue','obj_tool1']
             # compo_all_gs_ordered=['tissue']
             # compo_all_gs_ordered=['obj_tool1']
-            compo_all_gs_ordered=['tissue','obj_tool1']
             for name in compo_all_gs_ordered:
                 if 'tissue' in name:
                     assert cfg.model.nsg.include_tissue, name
@@ -210,6 +210,7 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                                         debug_getxyz_misgs=debug_getxyz_misgs,
                                         misgs_model=controller,
                                         single_compo_or_list=compo_all_gs_ordered,
+                                        tool_parse_cam_again = True,#1st time
                                         )
             # get the dict below     
             image_all = render_pkg_all["render"]
@@ -242,7 +243,9 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         else:
             if cfg.model.nsg.include_tissue:
                 render_pkg_tissue,_ = fdm_render(viewpoint_cam, controller.tissue, cfg.render, background,
-                                                 single_compo_or_list='tissue',)
+                                                 single_compo_or_list='tissue',
+                                                 tool_parse_cam_again = False,# no need for tissue
+                                                 )
                 image_tissue, depth_tissue, viewspace_point_tensor_tissue, visibility_filter_tissue, radii_tissue = \
                     render_pkg_tissue["render"], render_pkg_tissue["depth"], render_pkg_tissue["viewspace_points"], \
                         render_pkg_tissue["visibility_filter"], render_pkg_tissue["radii"]
@@ -269,7 +272,8 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 render_pkg_tool,_ = fdm_render(viewpoint_cam, controller.obj_tool1, cfg.render, background,
                                             debug_getxyz_misgs=debug_getxyz_misgs,
                                             misgs_model=controller,
-                                            single_compo_or_list='tool'
+                                            single_compo_or_list='tool',
+                                            tool_parse_cam_again = True,#1st time
                                             )
                 image_tool, depth_tool, viewspace_point_tensor_tool, visibility_filter_tool, radii_tool = \
                     render_pkg_tool["render"], render_pkg_tool["depth"], render_pkg_tool["viewspace_points"], \
@@ -332,13 +336,16 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                         try:
                             assert 'tissue' in model_name
                             render_pkg,_= fdm_render(viewpoint_cam, sub_gs_model, cfg.render, background,
-                                                     single_compo_or_list='tissue')
+                                                     single_compo_or_list='tissue',
+                                                     tool_parse_cam_again = False,#no need for tissue 
+                                                     )
                         except:
                             assert 'tool' in model_name
                             render_pkg,_= fdm_render(viewpoint_cam, sub_gs_model, cfg.render, background,
                                                     debug_getxyz_misgs = debug_getxyz_misgs,
                                                     misgs_model = controller,
-                                                    single_compo_or_list='tool'
+                                                    single_compo_or_list='tool',
+                                                    tool_parse_cam_again = False,#no need again 
                                                     )
 
                         image_obj, depth_obj = render_pkg["render"], render_pkg['depth']
@@ -381,10 +388,24 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 progress_bar.update(10)
             if iteration == training_args.iterations:
                 progress_bar.close()
+
+            # print(f'debug //{iteration}/////',
+            #       len(scene.gaussians_or_controller.poses_all_objs.opt_trans),
+            #         scene.gaussians_or_controller.poses_all_objs.opt_trans[-3:],
+            #         scene.gaussians_or_controller.poses_all_objs.input_trans[-3:],
+            #         )
+
             # Log and save
             if (iteration in training_args.save_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
-                scene.save(iteration,stage  ='')
+                stage =''
+                scene.save(iteration,stage =stage)
+                if isinstance(scene.gaussians_or_controller, MisGaussianModel):
+                    pose_model_root = os.path.join(scene.model_path, "point_cloud/iteration_{}".format(iteration))
+                    pose_model_path = os.path.join(pose_model_root, "pose_model.pth")
+                    if scene.gaussians_or_controller.poses_all_objs is not None:
+                        state_dict = scene.gaussians_or_controller.poses_all_objs.save_state_dict()
+                        torch.save(state_dict, pose_model_path)
                 
 
             # todo:xyz_gradient_accum
@@ -395,7 +416,9 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             if iteration < optim_args.densify_until_iter :
                 # Keep track of max radii in image-space for pruning
                 controller.set_visibility(include_list=list(set(controller.model_name_id.keys()) ))
-                controller.parse_camera(viewpoint_cam)  #update self.frame and other input for the rendering; cal the current #gs 
+                # newly updated streetgs remove this...
+                # print('todo: check if the below line is necessary here?why i need it in densify?' )
+                # controller.parse_camera(viewpoint_cam,skip_obj_pose = True)  #update self.frame and other input for the rendering; cal the current #gs 
                 controller.set_max_radii2D_all_models(radiis = radii_all_compo_adc, 
                                                       visibility_filters = visibility_filters_all_compo_adc,
                                                       model_names = model_names_all_compo_adc)
@@ -456,12 +479,22 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 controller.update_optimizer()
             # assert 0,training_args.checkpoint_iterations
             if (iteration in training_args.checkpoint_iterations):
-                print("\n[ITER {}] Saving Checkpoint".format(iteration))
-                state_dict = controller.save_state_dict(is_final=(iteration == training_args.iterations))
-                state_dict['iter'] = iteration
-                ckpt_path = os.path.join(cfg.trained_model_dir, f'iteration_{iteration}.pth')
-                print('save state dict in',ckpt_path)
-                torch.save(state_dict, ckpt_path)
+                #not used in deform3dgs
+                pass
+                # print("\n[ITER {}] Saving Checkpoint".format(iteration))
+                # state_dict = controller.save_state_dict(is_final=(iteration == training_args.iterations))
+                # state_dict['iter'] = iteration
+                # ckpt_path = os.path.join(cfg.trained_model_dir, f'iteration_{iteration}.pth')
+                # print('save state dict in',ckpt_path)
+                # torch.save(state_dict, ckpt_path)
+
+
+
+
+
+
+
+
 
 # from render_misgs import MisGaussianRenderer
 from gaussian_renderer.misgs_renderer import MisGaussianRenderer

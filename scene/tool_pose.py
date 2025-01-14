@@ -123,9 +123,10 @@ class ToolPose(nn.Module):
         # return self.input_trans[frame_idx, track_id]
         trans = self.opt_trans[frame_idx, track_id] 
         # print(f'debug opt_trans {frame_idx}: all_0?{not trans.any()} {trans}')
-        # if frame_idx == 20:
+        # if frame_idx == 24:
             # pass
-            # print("debug ***********opt_trans",frame_idx,"delta",trans,"input",self.input_trans[frame_idx, track_id])
+        # print(f"debug ***********opt_trans{len(self.opt_trans)}",frame_idx,"delta",self.opt_trans[-3:],
+            #   "input",self.input_trans[-3:])
         trans = trans + self.input_trans[frame_idx, track_id] 
         return trans
 
@@ -206,15 +207,19 @@ class ToolPose(nn.Module):
         # roll_pitch_yaw_input = self.input_rots_rpy[frame_idx,track_id]
         # quaternion_input = euler_to_quaternion(roll_pitch_yaw_input)
         quaternion_input = self.input_rots_quat[frame_idx,track_id]
-        # if frame_idx == 20:
-            # print("debug ***********opt_rots_rpy",frame_idx,"delta",quaternion,"input",quaternion_input)
+        # if frame_idx == 24:
+            # print("debug ***********opt_rots_rpy",frame_idx,"delta",quaternion.data,"input",quaternion_input.data)
         quaternion = quaternion_raw_multiply(quaternion_input.unsqueeze(0), 
                                     quaternion.unsqueeze(0)).squeeze(0)
         # print("Quaternion (w, x, y, z):", quaternion)
         return quaternion
 
-        
-
-
-
-
+    def save_state_dict(self, 
+                        is_final = False,
+                        ):
+        state_dict = dict()
+        if self.opt_track:
+            state_dict['params'] = self.state_dict()
+        if not is_final:
+            state_dict['optimizer'] = self.optimizer.state_dict()
+        return state_dict
