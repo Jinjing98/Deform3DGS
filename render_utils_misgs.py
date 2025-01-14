@@ -251,11 +251,15 @@ if __name__ == "__main__":
     else:
         from render import render_sets_misgs
         exp_time_cfg_file_name = 'configs/config_000000.yaml'
-        cfg_path = os.path.join(args.model_path,exp_time_args_file_name)
+        cfg_path = os.path.join(args.model_path,exp_time_cfg_file_name)
         assert os.path.exists(cfg_path),f'not saved cfg during traing? {args.configs}'
+        which_model='tissue'
+
         render_sets_misgs(model.extract(args), hyperparam.extract(args), args.iteration, 
             pipeline.extract(args), 
             args.skip_train, args.skip_test, args.skip_video,
             args.reconstruct_train,args.reconstruct_test,args.reconstruct_video,
-            which_model='tissue',
-            cfg_path=cfg_path)
+            # which_model='tissue',
+            which_model= which_model,
+            cfg_path=cfg_path,
+            )
