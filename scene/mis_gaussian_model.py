@@ -218,11 +218,24 @@ class MisGaussianModel(nn.Module):
             print('Loading model', model_name)
             model: Union[GaussianModelBase,TissueGaussianModel] = getattr(self, model_name)
             if isinstance(model,TissueGaussianModel):
+                print('todo not load accum and table properly?')
                 model.load_model(path)
             elif isinstance(model,ToolModel):
                 pass
             else:
                 assert 0,model_name
+
+        # try to load pose model
+        if self.include_obj_pose:
+            pose_model_path = os.path.join(path, 'pose_model.pth')
+            # pose_model_path = pose_model_path.replace('300', '299')
+            assert os.path.exists(pose_model_path)
+            # load the pose model
+            self.poses_all_objs.load_state_dict(torch.load(pose_model_path)['params'])
+        else:
+            assert 0
+
+
 
         # assert 0
         # print("loading model from exists{}".format(path))
@@ -272,8 +285,16 @@ class MisGaussianModel(nn.Module):
         #     state_dict['pose_correction'] = self.pose_correction.save_state_dict(is_final)
       
         return state_dict
-        
-    def parse_camera(self, camera: Camera):
+    
+    # def save_pose_model_state_dict(self, is_final = False):
+    #     state_dict = dict()
+    #     if self.poses_all_objs is not None:
+    #         state_dict['poses_all_objs'] = self.poses_all_objs.save_state_dict(is_final)
+    #     return state_dict
+
+
+    def parse_camera(self, camera: Camera,
+                     skip_obj_pose = False):
         ''''
         maintain: 
         self.num_gaussians 
@@ -322,41 +343,42 @@ class MisGaussianModel(nn.Module):
         #         self.num_gaussians += num_gaussians
         #////////////////////////
         # if len(self.graph_obj_list) > 0:
-        if len(self.graph_obj_list) > 0 and self.include_obj_pose:
-            self.obj_rots = []
-            self.obj_trans = []
-            for i, obj_name in enumerate(self.graph_obj_list):
-                obj_model: ToolModel = getattr(self, obj_name)
-                track_id = obj_model.track_id
-                assert track_id==0
-                # tool model
-                obj_rot = self.poses_all_objs.get_tracking_rotation(track_id, self.viewpoint_camera)
-                # it will use the trans info of the next two frames
-                obj_trans = self.poses_all_objs.get_tracking_translation(track_id, self.viewpoint_camera)  
-                # internally call:  get_tracking_translation_(self, track_id, timestamp)
-                # which learn the drift only--- 
-                ego_pose = self.viewpoint_camera.ego_pose
-                ego_pose_rot = matrix_to_quaternion(ego_pose[:3, :3].unsqueeze(0)).squeeze(0)
-                obj_rot = quaternion_raw_multiply(ego_pose_rot.unsqueeze(0), obj_rot.unsqueeze(0)).squeeze(0)
-                obj_trans = ego_pose[:3, :3] @ obj_trans + ego_pose[:3, 3]
+        if not skip_obj_pose:
+            if len(self.graph_obj_list) > 0 and self.include_obj_pose:
+                self.obj_rots = []
+                self.obj_trans = []
+                for i, obj_name in enumerate(self.graph_obj_list):
+                    obj_model: ToolModel = getattr(self, obj_name)
+                    track_id = obj_model.track_id
+                    assert track_id==0
+                    # tool model
+                    obj_rot = self.poses_all_objs.get_tracking_rotation(track_id, self.viewpoint_camera)
+                    # it will use the trans info of the next two frames
+                    obj_trans = self.poses_all_objs.get_tracking_translation(track_id, self.viewpoint_camera)  
+                    # internally call:  get_tracking_translation_(self, track_id, timestamp)
+                    # which learn the drift only--- 
+                    ego_pose = self.viewpoint_camera.ego_pose
+                    ego_pose_rot = matrix_to_quaternion(ego_pose[:3, :3].unsqueeze(0)).squeeze(0)
+                    obj_rot = quaternion_raw_multiply(ego_pose_rot.unsqueeze(0), obj_rot.unsqueeze(0)).squeeze(0)
+                    obj_trans = ego_pose[:3, :3] @ obj_trans + ego_pose[:3, 3]
+                    
+                    obj_rot = obj_rot.expand(obj_model.get_xyz.shape[0], -1)
+                    obj_trans = obj_trans.unsqueeze(0).expand(obj_model.get_xyz.shape[0], -1)
+                    
+                    self.obj_rots.append(obj_rot)
+                    self.obj_trans.append(obj_trans)
                 
-                obj_rot = obj_rot.expand(obj_model.get_xyz.shape[0], -1)
-                obj_trans = obj_trans.unsqueeze(0).expand(obj_model.get_xyz.shape[0], -1)
+                self.obj_rots = torch.cat(self.obj_rots, dim=0)
+                self.obj_trans = torch.cat(self.obj_trans, dim=0)  
                 
-                self.obj_rots.append(obj_rot)
-                self.obj_trans.append(obj_trans)
-            
-            self.obj_rots = torch.cat(self.obj_rots, dim=0)
-            self.obj_trans = torch.cat(self.obj_trans, dim=0)  
-            
-            self.flip_mask = []
-            for obj_name in self.graph_obj_list:
-                obj_model: ToolModel = getattr(self, obj_name)
-                # assert 0, f"{obj_name}{obj_model.get_xyz}{obj_model.get_xyz.shape}"
-                flip_mask = torch.zeros_like(obj_model.get_xyz[:, 0]).bool()
-                self.flip_mask.append(flip_mask)
-            self.flip_mask = torch.cat(self.flip_mask, dim=0)   
-            
+                self.flip_mask = []
+                for obj_name in self.graph_obj_list:
+                    obj_model: ToolModel = getattr(self, obj_name)
+                    # assert 0, f"{obj_name}{obj_model.get_xyz}{obj_model.get_xyz.shape}"
+                    flip_mask = torch.zeros_like(obj_model.get_xyz[:, 0]).bool()
+                    self.flip_mask.append(flip_mask)
+                self.flip_mask = torch.cat(self.flip_mask, dim=0)   
+                
     @property
     def get_scaling(self):
         scalings = []
