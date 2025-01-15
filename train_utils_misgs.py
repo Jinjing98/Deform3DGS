@@ -125,8 +125,10 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
     iter_end = torch.cuda.Event(enable_timing = True)
     #streetgs traing added
     ema_loss_for_log = 0.0
-    ema_psnr_for_log = 0.0
-    psnr_dict = {}
+    ema_psnr_for_log_tissue = 0.0
+    ema_psnr_for_log_tool = 0.0
+    psnr_dict_tissue = {}
+    psnr_dict_tool = {}
     progress_bar = tqdm(range(start_iter, training_args.iterations))
     start_iter += 1
 
@@ -190,6 +192,9 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         viewspace_point_tensors_all_compo_adcdict = {}
         model_names_all_compo_adc = []
         
+
+        more_to_log = {}
+
         renderOnce = False
         renderOnce = True        
         if renderOnce:
@@ -365,26 +370,58 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             save_img_torch(image_to_show, f"{cfg.model_path}/log_images/{log_img_name}.jpg")
         
         with torch.no_grad():
-            # Log
             tensor_dict = dict()
             # Progress bar
             ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
+
+            # Log PSNR in tb
+            psnr_weight_ori = 0 # set to 0,then it would be compariable to the one computed in deform3dgs
+            psnr_weight_ori = 0.6 # set to 0,then it would be compariable to the one computed in deform3dgs
+            psnr_weight_current = 1-psnr_weight_ori
+            log_psnr_name = 'ema_psnr' if psnr_weight_ori != 0 else 'crt_psnr'
+
+            if renderOnce:
+                image_tissue = image_all
+                image_tool = image_all
             if cfg.model.nsg.include_tissue:
-                if renderOnce:
-                    image_tissue = image_all
-                    image_tool = image_all
-                ema_psnr_for_log = 0.4 * psnr(image_tissue, gt_image, tissue_mask).mean().float() + 0.6 * ema_psnr_for_log
-                if viewpoint_cam.id not in psnr_dict:
-                    psnr_dict[viewpoint_cam.id] = psnr(image_tissue, gt_image, tissue_mask).mean().float()
+                # exponential moving average
+                ema_psnr_for_log_tissue = psnr_weight_current * psnr(image_tissue, gt_image, tissue_mask).mean().float() 
+                + psnr_weight_ori * ema_psnr_for_log_tissue
+                if viewpoint_cam.id not in psnr_dict_tissue:
+                    psnr_dict_tissue[viewpoint_cam.id] = psnr(image_tissue, gt_image, tissue_mask).mean().float()
                 else:
-                    psnr_dict[viewpoint_cam.id] = 0.4 * psnr(image_tissue, gt_image, tissue_mask).mean().float() + 0.6 * psnr_dict[viewpoint_cam.id]
+                    psnr_dict_tissue[viewpoint_cam.id] = psnr_weight_current * psnr(image_tissue, gt_image, tissue_mask).mean().float() 
+                    + psnr_weight_ori * psnr_dict_tissue[viewpoint_cam.id]
+
+                more_to_log[f'tissue/{log_psnr_name}'] = ema_psnr_for_log_tissue
+
             else:
                 assert 0,'alwasy include tissue'
+
+            if cfg.model.nsg.include_obj:
+                # exponential moving average
+                ema_psnr_for_log_tool = psnr_weight_current * psnr(image_tool, gt_image, tool_mask).mean().float() 
+                + psnr_weight_ori * ema_psnr_for_log_tool
+                if viewpoint_cam.id not in psnr_dict_tool:
+                    psnr_dict_tool[viewpoint_cam.id] = psnr(image_tool, gt_image, tool_mask).mean().float()
+                else:
+                    psnr_dict_tool[viewpoint_cam.id] = psnr_weight_current * psnr(image_tool, gt_image, tool_mask).mean().float() 
+                    + psnr_weight_ori * psnr_dict_tool[viewpoint_cam.id]
+
+                more_to_log[f'tool/{log_psnr_name}'] =  ema_psnr_for_log_tool
+
+            else:
+                assert 0,'alwasy include tool'
+
+
 
             if iteration % 10 == 0:
                 progress_bar.set_postfix({"Exp": f"{cfg.task}-{cfg.exp_name}", 
                                           "Loss": f"{ema_loss_for_log:.{7}f},", 
-                                          "PSNR": f"{ema_psnr_for_log:.{4}f}"})
+                                          "PSNR_tissue": f"{ema_psnr_for_log_tissue:.{4}f}",
+                                          "PSNR_tool": f"{ema_psnr_for_log_tool:.{4}f}",
+                                          }
+                                          )
                 progress_bar.update(10)
             if iteration == training_args.iterations:
                 progress_bar.close()
@@ -471,6 +508,7 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             if render_stree_param_for_ori_train_report!= None:
                 training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), 
                             training_args.test_iterations, scene, 
+                            more_to_log = more_to_log,
                             # render,[render_stree_param_for_ori_train_report, background]
                             )
 

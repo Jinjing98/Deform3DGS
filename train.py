@@ -18,6 +18,7 @@ from gaussian_renderer import render_flow as fdm_render
 import sys
 from scene import  Scene
 from scene.flexible_deform_model import TissueGaussianModel
+from scene.tool_model import ToolModel
 from utils.general_utils import safe_state
 from tqdm import tqdm
 from utils.image_utils import psnr
@@ -66,6 +67,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
     if not viewpoint_stack:
         viewpoint_stack = scene.getTrainCameras()
         
+    ema_psnr_for_log = 0
     for iteration in range(first_iter, final_iter+1):        
 
         iter_start.record()
@@ -118,6 +120,8 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
         gt_depth_tensor = torch.cat(gt_depths, 0)
         mask_tensor = torch.cat(masks, 0)
         
+        more_to_log = {}
+
         Ll1 = l1_loss(image_tensor, gt_image_tensor, mask_tensor)
         
         if (gt_depth_tensor!=0).sum() < 10:
@@ -128,8 +132,22 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
      
             depth_loss = l1_loss(depth_tensor, gt_depth_tensor, mask_tensor)
         
-      
-        psnr_ = psnr(image_tensor, gt_image_tensor, mask_tensor).mean().double()        
+
+        # Log PSNR in tb
+        psnr_weight_ori = 0 # set to 0,then it would be compariable to the one computed in deform3dgs
+        psnr_weight_ori = 0.6 # set to 0,then it would be compariable to the one computed in deform3dgs
+        psnr_weight_current = 1-psnr_weight_ori
+        log_psnr_name = 'ema_psnr' if psnr_weight_ori != 0 else 'crt_psnr'
+
+        # psnr_ = psnr(image_tensor, gt_image_tensor, mask_tensor).mean().double()
+        ema_psnr_for_log = psnr_weight_current * psnr(image_tensor, gt_image_tensor, mask_tensor).mean().double()
+        + psnr_weight_ori * ema_psnr_for_log
+
+        if isinstance(scene.gaussians_or_controller, TissueGaussianModel):
+            tgt = 'tissue'
+        else:
+            assert 0,'default deform3dgs only support tissue'
+        more_to_log[f'{tgt}/{log_psnr_name}'] = ema_psnr_for_log
         loss = Ll1 + depth_loss 
         
         loss.backward()
@@ -143,7 +161,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
             total_point = gaussians._xyz.shape[0]
             if iteration % 10 == 0:
                 progress_bar.set_postfix({"Loss": f"{loss.item():.{7}f}",
-                                          "psnr": f"{psnr_:.{2}f}",
+                                          f"psnr_{tgt}": f"{ema_psnr_for_log:.{2}f}",
                                           "point":f"{total_point}"})
                 progress_bar.update(10)
             if iteration == opt.iterations:
@@ -153,6 +171,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
             timer.pause()
             training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, 
                             # render, [pipe, background],
+                            more_to_log=more_to_log,
                             )
             if (iteration in saving_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
@@ -283,11 +302,49 @@ def prepare_output_and_logger(model_path,write_args = None):
 
 def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, 
                     # renderFunc, renderArgs,
+                    more_to_log = {},
+                    ):
+    
+    if tb_writer:
+        tb_writer.add_scalar(f'loss/l1_loss', Ll1.item(), iteration)
+        tb_writer.add_scalar(f'loss/total_loss', loss.item(), iteration)
+        tb_writer.add_scalar(f'other/iter_time', elapsed, iteration)
+
+        #jj    
+        from scene.mis_gaussian_model import MisGaussianModel
+        if isinstance(scene.gaussians_or_controller, MisGaussianModel):
+            # assert 0, scene.gaussians_or_controller.model
+            tb_writer.add_scalar('other/total_points_tissue', scene.gaussians_or_controller.tissue.get_xyz.shape[0], iteration)
+            tb_writer.add_scalar('other/total_points_tool', scene.gaussians_or_controller.obj_tool1.get_xyz.shape[0], iteration)
+            tb_writer.add_scalar('other/total_points_all', scene.gaussians_or_controller.tissue.get_xyz.shape[0]
+                                 +scene.gaussians_or_controller.obj_tool1.get_xyz.shape[0], iteration)
+        else:
+            if isinstance(scene.gaussians_or_controller, TissueGaussianModel):
+                tgt = 'tissue'
+            elif isinstance(scene.gaussians_or_controller, ToolModel):
+                tgt = 'tool'
+            else:
+                assert 0,scene.gaussians_or_controller
+            tb_writer.add_scalar(f'other/total_points_{tgt}', scene.gaussians_or_controller.get_xyz.shape[0], iteration)
+
+        if more_to_log != {}:
+            for k,v in more_to_log.items():
+                tb_writer.add_scalar(f'{k}', v, iteration)
+
+
+        # assert 0,  isinstance(scene.gaussians_or_controller, MisGaussianModel)
+        # tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians_or_controller.get_opacity, iteration)
+        # torch.cuda.empty_cache()
+
+
+
+def training_report_v0(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, 
+                    # renderFunc, renderArgs,
                     ):
     
     if tb_writer:
         tb_writer.add_scalar(f'train_loss_patches/l1_loss', Ll1.item(), iteration)
-        tb_writer.add_scalar(f'train_loss_patchestotal_loss', loss.item(), iteration)
+        tb_writer.add_scalar(f'train_loss_patches/total_loss', loss.item(), iteration)
         tb_writer.add_scalar(f'iter_time', elapsed, iteration)
 
         #jj    
@@ -296,9 +353,11 @@ def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_i
             # assert 0, scene.gaussians_or_controller.model
             tb_writer.add_scalar('total_points', scene.gaussians_or_controller.tissue.get_xyz.shape[0], iteration)
             tb_writer.add_scalar('total_points_tool', scene.gaussians_or_controller.obj_tool1.get_xyz.shape[0], iteration)
+            tb_writer.add_scalar('total_points_all', scene.gaussians_or_controller.tissue.get_xyz.shape[0]+scene.gaussians_or_controller.obj_tool1.get_xyz.shape[0], iteration)
         else:
             tb_writer.add_scalar('total_points', scene.gaussians_or_controller.get_xyz.shape[0], iteration)
 
+        # assert 0,  isinstance(scene.gaussians_or_controller, MisGaussianModel)
         # tb_writer.add_histogram("scene/opacity_histogram", scene.gaussians_or_controller.get_opacity, iteration)
         # torch.cuda.empty_cache()
 
@@ -321,7 +380,7 @@ if __name__ == "__main__":
     # torch.set_default_tensor_type('torch.FloatTensor')
     torch.cuda.empty_cache()
     use_stree_grouping_strategy = True
-    # use_stree_grouping_strategy = False
+    use_stree_grouping_strategy = False
 
     if use_stree_grouping_strategy:
         use_streetgs_render = True #fail
