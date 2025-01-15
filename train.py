@@ -91,6 +91,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
         gt_images = []
         gt_depths = []
         masks = []
+        masks_tissue_dbg = []
         
         radii_list = []
         visibility_filter_list = []
@@ -104,12 +105,13 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
             gt_image = viewpoint_cam.original_image.cuda().float()
             gt_depth = viewpoint_cam.original_depth.cuda().float()
             mask = viewpoint_cam.mask.cuda()
-            
+            mask_tissue_dbg = viewpoint_cam.raw_tissue_mask.cuda()
             images.append(image.unsqueeze(0))
             depths.append(depth.unsqueeze(0))
             gt_images.append(gt_image.unsqueeze(0))
             gt_depths.append(gt_depth.unsqueeze(0))
             masks.append(mask.unsqueeze(0))
+            masks_tissue_dbg.append(mask_tissue_dbg.unsqueeze(0))
             radii_list.append(radii.unsqueeze(0))
             visibility_filter_list.append(visibility_filter.unsqueeze(0))
             viewspace_point_tensor_list.append(viewspace_point_tensor)
@@ -121,6 +123,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
         gt_image_tensor = torch.cat(gt_images,0)
         gt_depth_tensor = torch.cat(gt_depths, 0)
         mask_tensor = torch.cat(masks, 0)
+        mask_tissue_dbg_tensor = torch.cat(masks_tissue_dbg, 0)
         
         more_to_log = {}
 
@@ -142,8 +145,10 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
             tool_mask_tensor = mask_tensor
             tissue_mask_tensor = ~mask_tensor
         elif dataset.tool_mask == 'nouse':  
-            tool_mask_tensor = torch.zeros_like(mask_tensor)
-            tissue_mask_tensor = mask_tensor
+            # assert 0, 'todo try to use the actual mask saved in camera'
+            # tool_mask_tensor = torch.zeros_like(mask_tensor)
+            tissue_mask_tensor = mask_tissue_dbg_tensor #mask_tensor
+            tool_mask_tensor = ~mask_tissue_dbg_tensor
         else:
             assert 0,dataset.tool_mask
         # Log PSNR in tb

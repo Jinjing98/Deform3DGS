@@ -58,8 +58,9 @@ class Camera(nn.Module):
         self.K = K
         self.meta = metadata
         self.id = id
-        for name, mask in masks.items():
-            setattr(self, name, mask)
+        for name, mask_i in masks.items():
+            setattr(self, name, mask_i)
+        # assert 0,masks.keys()
         if 'ego_pose' in self.meta.keys():
             self.ego_pose = torch.from_numpy(self.meta['ego_pose']).float().cuda()
             del self.meta['ego_pose']

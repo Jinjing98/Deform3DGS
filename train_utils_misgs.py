@@ -230,6 +230,7 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
                 + optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), gt_image.to(torch.double), \
                                                         mask=tool_mask))
+            # more recommended than edit order list
             loss += tool_loss
             # loss = 0*loss+tool_loss
             # loss = loss+tool_loss*0

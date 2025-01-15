@@ -200,6 +200,10 @@ class EndoNeRF_Dataset(object):
             # mask / depth
             mask_path = self.masks_paths[idx]
             mask = Image.open(mask_path)
+            #mask here refer to tissue are valued
+            raw_tissue_mask = np.array(mask) / 255.0#np.array(mask)
+            raw_tissue_mask = self.transform(raw_tissue_mask).bool()
+
             #mask refer to tool are valued
             if self.dataset in ['StereoMIS']:
                 mask = 255-np.array(mask) 
@@ -207,6 +211,7 @@ class EndoNeRF_Dataset(object):
                 mask = np.array(mask)  
             else:
                 assert 0, NotImplementedError
+
             if self.tool_mask == 'use':
                 mask = 1 - np.array(mask) / 255.0
             elif self.tool_mask == 'inverse':
@@ -265,6 +270,7 @@ class EndoNeRF_Dataset(object):
             # if you want
             masks = {
                 # "tissue_mask":mask,
+                "raw_tissue_mask":raw_tissue_mask,
                 "tissue_mask":mask,
                 "tool_mask":~mask,
                 "no_mask":torch.ones_like(mask).bool().to(mask.device),
