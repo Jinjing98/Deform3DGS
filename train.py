@@ -67,7 +67,9 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
     if not viewpoint_stack:
         viewpoint_stack = scene.getTrainCameras()
         
-    ema_psnr_for_log = 0
+    # ema_psnr_for_log = 0
+    ema_psnr_for_log_tissue = 0
+    ema_psnr_for_log_tool = 0
     for iteration in range(first_iter, final_iter+1):        
 
         iter_start.record()
@@ -132,7 +134,18 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
      
             depth_loss = l1_loss(depth_tensor, gt_depth_tensor, mask_tensor)
         
-
+        #///////////////////////////////////////////////////
+        if dataset.tool_mask == 'use':
+            tissue_mask_tensor = mask_tensor
+            tool_mask_tensor = ~mask_tensor
+        elif dataset.tool_mask == 'inverse':
+            tool_mask_tensor = mask_tensor
+            tissue_mask_tensor = ~mask_tensor
+        elif dataset.tool_mask == 'nouse':  
+            tool_mask_tensor = torch.zeros_like(mask_tensor)
+            tissue_mask_tensor = mask_tensor
+        else:
+            assert 0,dataset.tool_mask
         # Log PSNR in tb
         psnr_weight_ori = 0 # set to 0,then it would be compariable to the one computed in deform3dgs
         psnr_weight_ori = 0.6 # set to 0,then it would be compariable to the one computed in deform3dgs
@@ -140,14 +153,18 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
         log_psnr_name = 'ema_psnr' if psnr_weight_ori != 0 else 'crt_psnr'
 
         # psnr_ = psnr(image_tensor, gt_image_tensor, mask_tensor).mean().double()
-        ema_psnr_for_log = psnr_weight_current * psnr(image_tensor, gt_image_tensor, mask_tensor).mean().double()
-        + psnr_weight_ori * ema_psnr_for_log
+        ema_psnr_for_log_tissue = psnr_weight_current * psnr(image_tensor, gt_image_tensor, 
+                                                      tissue_mask_tensor).mean().double()
+        + psnr_weight_ori * ema_psnr_for_log_tissue
 
-        if isinstance(scene.gaussians_or_controller, TissueGaussianModel):
-            tgt = 'tissue'
-        else:
-            assert 0,'default deform3dgs only support tissue'
-        more_to_log[f'{tgt}/{log_psnr_name}'] = ema_psnr_for_log
+        ema_psnr_for_log_tool = psnr_weight_current * psnr(image_tensor, gt_image_tensor, 
+                                                      tool_mask_tensor).mean().double()
+        + psnr_weight_ori * ema_psnr_for_log_tool
+
+ 
+        assert isinstance(scene.gaussians_or_controller, TissueGaussianModel)
+        more_to_log[f'tissue/{log_psnr_name}'] = ema_psnr_for_log_tissue
+        more_to_log[f'tool/{log_psnr_name}'] = ema_psnr_for_log_tool
         loss = Ll1 + depth_loss 
         
         loss.backward()
@@ -161,7 +178,8 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
             total_point = gaussians._xyz.shape[0]
             if iteration % 10 == 0:
                 progress_bar.set_postfix({"Loss": f"{loss.item():.{7}f}",
-                                          f"psnr_{tgt}": f"{ema_psnr_for_log:.{2}f}",
+                                          f"psnr_tissue": f"{ema_psnr_for_log_tissue:.{2}f}",
+                                          f"psnr_tool": f"{ema_psnr_for_log_tool:.{2}f}",
                                           "point":f"{total_point}"})
                 progress_bar.update(10)
             if iteration == opt.iterations:
