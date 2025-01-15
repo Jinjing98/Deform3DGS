@@ -13,7 +13,7 @@ import os
 import torch
 from random import randint
 # from utils.loss_utils import l1_loss
-# from gaussian_renderer import render_flow as fdm_render
+from gaussian_renderer import render_flow as fdm_render
 
 import sys
 from scene import  Scene
@@ -49,7 +49,7 @@ except ImportError:
 
 
 # def training_misgsmodel(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, expname, extra_mark):
-def training_misgsmodel(args,use_streetgs_render = False):
+def training_misgsmodel(args,use_streetgs_render = False,eval_n_log_test_cam =False):
     other_param_dict = None
     dbg_print = True
     dbg_print = False
@@ -88,8 +88,202 @@ def training_misgsmodel(args,use_streetgs_render = False):
                                scene = scene, tb_writer = tb_writer,
                                render_stree_param_for_ori_train_report = render_stree_param,
                                 use_streetgs_render = use_streetgs_render,
+                                eval_n_log_test_cam = eval_n_log_test_cam,
                                
                                )
+
+
+
+def compute_more_metrics(gt_image,renderOnce,image_all,cfg,tissue_mask,tool_mask,more_to_log,
+                            use_ema = True,
+                            ema_psnr_for_log_tissue = None,
+                            ema_psnr_for_log_tool = None,
+                            dir_append = ''
+                            ):
+    # tensor_dict = dict()
+    # Progress bar
+    # ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
+    # Log PSNR in tb
+    # psnr_weight_ori = 0 # set to 0,then it would be compariable to the one computed in deform3dgs
+    psnr_weight_ori = 0.6 if use_ema else 0# set to 0,then it would be compariable to the one computed in deform3dgs
+    psnr_weight_current = 1-psnr_weight_ori
+    log_psnr_name = 'ema_psnr' if use_ema else 'crt_psnr'
+    if use_ema:
+        assert ema_psnr_for_log_tissue!= None
+        assert ema_psnr_for_log_tool!= None
+
+    if renderOnce:
+        image_tissue = image_all
+        image_tool = image_all
+    if cfg.model.nsg.include_tissue:
+        # exponential moving average
+        ema_psnr_for_log_tissue = psnr_weight_current * psnr(image_tissue, gt_image, tissue_mask).mean().float() 
+        + psnr_weight_ori * ema_psnr_for_log_tissue
+        # if viewpoint_cam.id not in psnr_dict_tissue:
+        #     psnr_dict_tissue[viewpoint_cam.id] = psnr(image_tissue, gt_image, tissue_mask).mean().float()
+        # else:
+        #     psnr_dict_tissue[viewpoint_cam.id] = psnr_weight_current * psnr(image_tissue, gt_image, tissue_mask).mean().float() 
+        #     + psnr_weight_ori * psnr_dict_tissue[viewpoint_cam.id]
+        more_to_log[f'tissue/{log_psnr_name}{dir_append}'] = ema_psnr_for_log_tissue
+
+    else:
+        assert 0,'alwasy include tissue'
+
+    if cfg.model.nsg.include_obj:
+        # exponential moving average
+        ema_psnr_for_log_tool = psnr_weight_current * psnr(image_tool, gt_image, tool_mask).mean().float() 
+        + psnr_weight_ori * ema_psnr_for_log_tool
+        # if viewpoint_cam.id not in psnr_dict_tool:
+        #     psnr_dict_tool[viewpoint_cam.id] = psnr(image_tool, gt_image, tool_mask).mean().float()
+        # else:
+        #     psnr_dict_tool[viewpoint_cam.id] = psnr_weight_current * psnr(image_tool, gt_image, tool_mask).mean().float() 
+        #     + psnr_weight_ori * psnr_dict_tool[viewpoint_cam.id]
+        more_to_log[f'tool/{log_psnr_name}{dir_append}'] =  ema_psnr_for_log_tool
+    else:
+        assert 0,'alwasy include tool'
+    return ema_psnr_for_log_tissue,ema_psnr_for_log_tool,more_to_log
+
+# 
+def render_misgs_n_compute_loss(controller,viewpoint_cam,cfg,training_args,optim_args,
+                                renderOnce,compo_all_gs_ordered_renderonce,
+                                debug_getxyz_misgs,
+                                iteration,
+                                skip_loss_compute = False):
+    # viewpoint_cam: Camera = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
+    gt_image = viewpoint_cam.original_image.cuda()
+    if hasattr(viewpoint_cam, 'tissue_mask'):# tissue mask
+        tissue_mask = viewpoint_cam.tissue_mask.cuda().bool()
+    else:
+        tissue_mask = torch.ones_like(gt_image[0:1]).bool()
+    if hasattr(viewpoint_cam, 'tool_mask'):# tissue mask
+        tool_mask = viewpoint_cam.tool_mask.cuda().bool()
+    else:
+        tool_mask = torch.ones_like(gt_image[0:1]).bool()
+    if (iteration - 1) == training_args.debug_from:
+        cfg.render.debug = True
+
+    bg_color = [1, 1, 1] if cfg.data.white_background else [0, 0, 0]
+    background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
+    scalar_dict = dict()
+    from utils.loss_utils import l1_loss
+    radii_all_compo_adc = {}
+    visibility_filters_all_compo_adc = {}
+    viewspace_point_tensors_all_compo_adcdict = {}
+    model_names_all_compo_adc = []
+
+    if renderOnce:            
+        compo_all_gs_ordered = compo_all_gs_ordered_renderonce
+        for name in compo_all_gs_ordered:
+            if 'tissue' in name:
+                assert cfg.model.nsg.include_tissue, name
+            elif 'tool' in name:
+                assert cfg.model.nsg.include_obj, name
+            else:
+                assert 0,name 
+        render_pkg_all,compo_all_gs_ordered_idx = fdm_render(viewpoint_cam, 
+                                        None, 
+                                        cfg.render, 
+                                        background,
+                                    debug_getxyz_misgs=debug_getxyz_misgs,
+                                    misgs_model=controller,
+                                    single_compo_or_list=compo_all_gs_ordered,
+                                    tool_parse_cam_again = True,#1st time
+                                    )
+        # get the dict below     
+        image_all = render_pkg_all["render"]
+        if not skip_loss_compute:
+            Ll1 = l1_loss(image_all, gt_image, tissue_mask)
+            #scalar_dict['l1_loss'] = Ll1.item()
+            loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + \
+                optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), \
+                                                    gt_image.to(torch.double), mask=tissue_mask))
+
+            Ll1_tool = l1_loss(image_all, gt_image, tool_mask)
+            #scalar_dict['l1_tool_loss'] = Ll1_tool.item()
+            tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
+                + optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), gt_image.to(torch.double), \
+                                                        mask=tool_mask))
+            # more recommended than edit order list
+            loss += tool_loss
+            # loss = 0*loss+tool_loss
+            # loss = loss+tool_loss*0
+
+        for model_name,(start_idx,end_idx) in compo_all_gs_ordered_idx.items():
+                model_names_all_compo_adc.append(model_name)
+                assert end_idx<len(render_pkg_all["radii"]),f'end_idx {end_idx} should be less than {len(render_pkg_all["radii"])}'
+                assert len(render_pkg_all["radii"])==len(render_pkg_all["visibility_filter"])
+                assert len(render_pkg_all["radii"])==len(render_pkg_all["viewspace_points"])
+                radii_all_compo_adc[model_name] = render_pkg_all["radii"][start_idx:(end_idx+1)]
+                visibility_filters_all_compo_adc[model_name] = render_pkg_all["visibility_filter"][start_idx:(end_idx+1)]
+                # viewspace_point_tensors_all_compo_adcdict[model_name] = render_pkg_all["viewspace_points"][start_idx:(end_idx+1)]
+        assert model_names_all_compo_adc == compo_all_gs_ordered,'sanity check'
+
+    
+    else:
+        if cfg.model.nsg.include_tissue:
+            render_pkg_tissue,_ = fdm_render(viewpoint_cam, controller.tissue, cfg.render, background,
+                                            single_compo_or_list='tissue',
+                                            tool_parse_cam_again = False,# no need for tissue
+                                            )
+            image_tissue, depth_tissue, viewspace_point_tensor_tissue, visibility_filter_tissue, radii_tissue = \
+                render_pkg_tissue["render"], render_pkg_tissue["depth"], render_pkg_tissue["viewspace_points"], \
+                    render_pkg_tissue["visibility_filter"], render_pkg_tissue["radii"]
+            acc_tissue = torch.zeros_like(depth_tissue)
+            if not skip_loss_compute:
+                Ll1 = l1_loss(image_tissue, gt_image, tissue_mask)
+                scalar_dict['l1_loss'] = Ll1.item()
+                loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + \
+                    optim_args.lambda_dssim * (1.0 - ssim(image_tissue.to(torch.double), \
+                                                        gt_image.to(torch.double), mask=tissue_mask))
+                # print('Missing Depth loss...')
+            
+            # register for adc
+            model_names_all_compo_adc.append('tissue')
+            radii_all_compo_adc['tissue'] = radii_tissue
+            visibility_filters_all_compo_adc['tissue'] = visibility_filter_tissue
+            viewspace_point_tensors_all_compo_adcdict['tissue'] = viewspace_point_tensor_tissue
+            
+            
+        else:
+            assert 0,'alwasy include tissue'
+
+        if cfg.model.nsg.include_obj:
+            # render_pkg_tool = gaussians_renderer.render_object(viewpoint_cam, gaussians)
+            render_pkg_tool,_ = fdm_render(viewpoint_cam, controller.obj_tool1, cfg.render, background,
+                                        debug_getxyz_misgs=debug_getxyz_misgs,
+                                        misgs_model=controller,
+                                        single_compo_or_list='tool',
+                                        tool_parse_cam_again = True,#1st time
+                                        )
+            image_tool, depth_tool, viewspace_point_tensor_tool, visibility_filter_tool, radii_tool = \
+                render_pkg_tool["render"], render_pkg_tool["depth"], render_pkg_tool["viewspace_points"], \
+                    render_pkg_tool["visibility_filter"], render_pkg_tool["radii"]
+            if not skip_loss_compute:
+                Ll1_tool = l1_loss(image_tool, gt_image, tool_mask)
+                scalar_dict['l1_tool_loss'] = Ll1_tool.item()
+                tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
+                    + optim_args.lambda_dssim * (1.0 - ssim(image_tool.to(torch.double), gt_image.to(torch.double), \
+                                                            mask=tool_mask))
+                # loss += tool_loss
+                # loss = 0*loss+tool_loss
+                loss = loss+tool_loss*0
+
+            # register for adc
+            model_names_all_compo_adc.append('obj_tool1')
+            radii_all_compo_adc['obj_tool1'] = radii_tool
+            visibility_filters_all_compo_adc['obj_tool1'] = visibility_filter_tool
+            viewspace_point_tensors_all_compo_adcdict['obj_tool1'] = viewspace_point_tensor_tool
+    
+    if skip_loss_compute:
+         Ll1, loss = None,None
+
+    return render_pkg_all,compo_all_gs_ordered_idx, Ll1, loss,scalar_dict,\
+        gt_image,image_all,tissue_mask,tool_mask,\
+        radii_all_compo_adc,visibility_filters_all_compo_adc,model_names_all_compo_adc,\
+            viewspace_point_tensors_all_compo_adcdict,visibility_filters_all_compo_adc,\
+                model_names_all_compo_adc
+
+
 
 
 def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
@@ -97,6 +291,7 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                                use_streetgs_render = False,
                                debug_getxyz_misgs = True,
                             #    debug_getxyz_misgs = False,
+                               eval_n_log_test_cam = False,
                                
                                ):
     
@@ -118,17 +313,17 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
     # from render_misgs import MisGaussianRenderer
     # gaussians_renderer = MisGaussianRenderer(cfg=cfg)
-    from gaussian_renderer import render_flow as fdm_render
+    # from gaussian_renderer import render_flow as fdm_render
     # from gaussian_renderer.tool_renderer import tool_render
 
     iter_start = torch.cuda.Event(enable_timing = True)
     iter_end = torch.cuda.Event(enable_timing = True)
     #streetgs traing added
-    ema_loss_for_log = 0.0
+    # ema_loss_for_log = 0.0
     ema_psnr_for_log_tissue = 0.0
     ema_psnr_for_log_tool = 0.0
-    psnr_dict_tissue = {}
-    psnr_dict_tool = {}
+    # psnr_dict_tissue = {}
+    # psnr_dict_tool = {}
     progress_bar = tqdm(range(start_iter, training_args.iterations))
     start_iter += 1
 
@@ -155,270 +350,53 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         # Pick a random Camera
         if not viewpoint_stack:
             viewpoint_stack = scene.getTrainCameras().copy()
-        
-
         # print("Loading Training Cameras")
         # self.train_camera = scene_info.train_cameras 
+
+        #hard code
+        renderOnce = False
+        renderOnce = True  
+        compo_all_gs_ordered_renderonce=['tissue','obj_tool1']
+        # compo_all_gs_ordered_renderonce=['tissue']
+        # compo_all_gs_ordered_renderonce=['obj_tool1']
+
+
         viewpoint_cam: Camera = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
 
-        gt_image = viewpoint_cam.original_image.cuda()
-
-
-
-        if hasattr(viewpoint_cam, 'tissue_mask'):# tissue mask
-            tissue_mask = viewpoint_cam.tissue_mask.cuda().bool()
-        else:
-            tissue_mask = torch.ones_like(gt_image[0:1]).bool()
-
-        if hasattr(viewpoint_cam, 'tool_mask'):# tissue mask
-            tool_mask = viewpoint_cam.tool_mask.cuda().bool()
-        else:
-            tool_mask = torch.ones_like(gt_image[0:1]).bool()
- 
-        if (iteration - 1) == training_args.debug_from:
-            cfg.render.debug = True
-            
-        bg_color = [1, 1, 1] if cfg.data.white_background else [0, 0, 0]
-        background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
-
-
-
-
-        scalar_dict = dict()
-        from utils.loss_utils import l1_loss
-        
-        radii_all_compo_adc = {}
-        visibility_filters_all_compo_adc = {}
-        viewspace_point_tensors_all_compo_adcdict = {}
-        model_names_all_compo_adc = []
-        
-
-        more_to_log = {}
-
-        renderOnce = False
-        renderOnce = True        
-        if renderOnce:
-            compo_all_gs_ordered=['tissue','obj_tool1']
-            # compo_all_gs_ordered=['tissue']
-            # compo_all_gs_ordered=['obj_tool1']
-            for name in compo_all_gs_ordered:
-                if 'tissue' in name:
-                    assert cfg.model.nsg.include_tissue, name
-                elif 'tool' in name:
-                    assert cfg.model.nsg.include_obj, name
-                else:
-                    assert 0,name 
-            render_pkg_all,compo_all_gs_ordered_idx = fdm_render(viewpoint_cam, 
-                                            None, 
-                                            cfg.render, 
-                                            background,
-                                        debug_getxyz_misgs=debug_getxyz_misgs,
-                                        misgs_model=controller,
-                                        single_compo_or_list=compo_all_gs_ordered,
-                                        tool_parse_cam_again = True,#1st time
-                                        )
-            # get the dict below     
-            image_all = render_pkg_all["render"]
-            Ll1 = l1_loss(image_all, gt_image, tissue_mask)
-            #scalar_dict['l1_loss'] = Ll1.item()
-            loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + \
-                optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), \
-                                                    gt_image.to(torch.double), mask=tissue_mask))
-
-            Ll1_tool = l1_loss(image_all, gt_image, tool_mask)
-            #scalar_dict['l1_tool_loss'] = Ll1_tool.item()
-            tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
-                + optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), gt_image.to(torch.double), \
-                                                        mask=tool_mask))
-            # more recommended than edit order list
-            loss += tool_loss
-            # loss = 0*loss+tool_loss
-            # loss = loss+tool_loss*0
-
-            for model_name,(start_idx,end_idx) in compo_all_gs_ordered_idx.items():
-                    model_names_all_compo_adc.append(model_name)
-                    assert end_idx<len(render_pkg_all["radii"]),f'end_idx {end_idx} should be less than {len(render_pkg_all["radii"])}'
-                    assert len(render_pkg_all["radii"])==len(render_pkg_all["visibility_filter"])
-                    assert len(render_pkg_all["radii"])==len(render_pkg_all["viewspace_points"])
-                    radii_all_compo_adc[model_name] = render_pkg_all["radii"][start_idx:(end_idx+1)]
-                    visibility_filters_all_compo_adc[model_name] = render_pkg_all["visibility_filter"][start_idx:(end_idx+1)]
-                    # viewspace_point_tensors_all_compo_adcdict[model_name] = render_pkg_all["viewspace_points"][start_idx:(end_idx+1)]
-            assert model_names_all_compo_adc == compo_all_gs_ordered,'sanity check'
-
-        
-        else:
-            if cfg.model.nsg.include_tissue:
-                render_pkg_tissue,_ = fdm_render(viewpoint_cam, controller.tissue, cfg.render, background,
-                                                 single_compo_or_list='tissue',
-                                                 tool_parse_cam_again = False,# no need for tissue
-                                                 )
-                image_tissue, depth_tissue, viewspace_point_tensor_tissue, visibility_filter_tissue, radii_tissue = \
-                    render_pkg_tissue["render"], render_pkg_tissue["depth"], render_pkg_tissue["viewspace_points"], \
-                        render_pkg_tissue["visibility_filter"], render_pkg_tissue["radii"]
-                acc_tissue = torch.zeros_like(depth_tissue)
-                Ll1 = l1_loss(image_tissue, gt_image, tissue_mask)
-                scalar_dict['l1_loss'] = Ll1.item()
-                loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + \
-                    optim_args.lambda_dssim * (1.0 - ssim(image_tissue.to(torch.double), \
-                                                        gt_image.to(torch.double), mask=tissue_mask))
-                # print('Missing Depth loss...')
-                
-                # register for adc
-                model_names_all_compo_adc.append('tissue')
-                radii_all_compo_adc['tissue'] = radii_tissue
-                visibility_filters_all_compo_adc['tissue'] = visibility_filter_tissue
-                viewspace_point_tensors_all_compo_adcdict['tissue'] = viewspace_point_tensor_tissue
-                
-                
-            else:
-                assert 0,'alwasy include tissue'
-
-            if cfg.model.nsg.include_obj:
-                # render_pkg_tool = gaussians_renderer.render_object(viewpoint_cam, gaussians)
-                render_pkg_tool,_ = fdm_render(viewpoint_cam, controller.obj_tool1, cfg.render, background,
-                                            debug_getxyz_misgs=debug_getxyz_misgs,
-                                            misgs_model=controller,
-                                            single_compo_or_list='tool',
-                                            tool_parse_cam_again = True,#1st time
-                                            )
-                image_tool, depth_tool, viewspace_point_tensor_tool, visibility_filter_tool, radii_tool = \
-                    render_pkg_tool["render"], render_pkg_tool["depth"], render_pkg_tool["viewspace_points"], \
-                        render_pkg_tool["visibility_filter"], render_pkg_tool["radii"]
-                Ll1_tool = l1_loss(image_tool, gt_image, tool_mask)
-                scalar_dict['l1_tool_loss'] = Ll1_tool.item()
-                tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
-                    + optim_args.lambda_dssim * (1.0 - ssim(image_tool.to(torch.double), gt_image.to(torch.double), \
-                                                            mask=tool_mask))
-                # loss += tool_loss
-                # loss = 0*loss+tool_loss
-                loss = loss+tool_loss*0
-
-                # register for adc
-                model_names_all_compo_adc.append('obj_tool1')
-                radii_all_compo_adc['obj_tool1'] = radii_tool
-                visibility_filters_all_compo_adc['obj_tool1'] = visibility_filter_tool
-                viewspace_point_tensors_all_compo_adcdict['obj_tool1'] = viewspace_point_tensor_tool
-
-
+        render_pkg_all,compo_all_gs_ordered_idx,  Ll1, loss, scalar_dict,\
+            gt_image,image_all,tissue_mask,tool_mask,\
+                radii_all_compo_adc,visibility_filters_all_compo_adc,model_names_all_compo_adc,\
+                    viewspace_point_tensors_all_compo_adcdict,visibility_filters_all_compo_adc,\
+                        model_names_all_compo_adc = render_misgs_n_compute_loss(controller,viewpoint_cam,cfg,training_args,optim_args,
+                                renderOnce,compo_all_gs_ordered_renderonce,
+                                debug_getxyz_misgs,
+                                iteration,
+                            )
+        # controller,viewpoint_cam,cfg,training_args,optim_args,
+        #                         renderOnce,compo_all_gs_ordered_renderonce,
+        #                         debug_getxyz_misgs,
+        #                         iteration,
+        #                         skip_loss_compute = False
 
         scalar_dict['loss'] = loss.item()
         loss.backward()
-        # if renderOnce:
-        #     #need to be 32738*3
-        #     print(f'??debug fuse: render_pkg_all viewspace_points grad {render_pkg_all["viewspace_points"].grad}')
-        #     assert render_pkg_all['viewspace_points'].grad!=None 
-        # else:
-        #     #30721*3 2017*3
-        #     try:
-        #         print(f"*************{render_pkg_tissue['viewspace_points'].grad.shape} {render_pkg_tool['viewspace_points'].grad.shape}")
-        #     except:
-        #         pass
-        # # follow deform3dgs
-
         iter_end.record()
-        is_save_images = True
-        # if is_save_images and (iteration % 1000 == 0):
-        if is_save_images \
-            and (iteration % 10 == 0)\
-            and iteration > int(0.9*training_args.iterations)\
-                :
-            # row0: gt_image, image, depth
-            # row1: acc, image_obj, acc_obj
-            # depth_colored, _ = visualize_depth_numpy(depth.detach().cpu().numpy().squeeze(0))
-            # depth_colored = depth_colored[..., [2, 1, 0]] / 255.
-            # depth_colored = torch.from_numpy(depth_colored).permute(2, 0, 1).float().cuda()
-            # row0 = torch.cat([gt_image, image, depth_colored], dim=2)
-            row0 = torch.cat([gt_image, gt_image,gt_image], dim=2)
-            # acc = acc.repeat(3, 1, 1)
-            with torch.no_grad():
-                bg_color = [1, 1, 1] if cfg.data.white_background else [0, 0, 0]
-                background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
-                image_to_show_list = [row0]
-                # if controller.obj_tool:
-                for model_name in controller.model_name_id.keys():
-                    if controller.get_visibility(model_name=model_name):
-                        sub_gs_model = getattr(controller, model_name)
-                        try:
-                            assert 'tissue' in model_name
-                            render_pkg,_= fdm_render(viewpoint_cam, sub_gs_model, cfg.render, background,
-                                                     single_compo_or_list='tissue',
-                                                     tool_parse_cam_again = False,#no need for tissue 
-                                                     )
-                        except:
-                            assert 'tool' in model_name
-                            render_pkg,_= fdm_render(viewpoint_cam, sub_gs_model, cfg.render, background,
-                                                    debug_getxyz_misgs = debug_getxyz_misgs,
-                                                    misgs_model = controller,
-                                                    single_compo_or_list='tool',
-                                                    tool_parse_cam_again = False,#no need again 
-                                                    )
-
-                        image_obj, depth_obj = render_pkg["render"], render_pkg['depth']
-
-                        depth_obj = depth_obj.repeat(3, 1, 1).to(image_obj.device) 
-                        place_holder = torch.zeros_like(depth_obj).to(depth_obj.device)
-                        row_i = torch.cat([image_obj, depth_obj, place_holder], dim=2)
-                        image_to_show_list.append(row_i)
-
-            # image_to_show = torch.cat([row0, row1], dim=1)
-            image_to_show = torch.cat(image_to_show_list, dim=1)
-            image_to_show = torch.clamp(image_to_show, 0.0, 1.0)
-            os.makedirs(f"{cfg.model_path}/log_images", exist_ok = True)
-            # save_img_torch(image_to_show, f"{cfg.model_path}/log_images/{iteration}.jpg")
-            # log_img_name = f'it{iteration}_name{viewpoint_cam.image_name}_id{viewpoint_cam.id}_time{viewpoint_cam.time}'
-            log_img_name = f'id{viewpoint_cam.id}_it{iteration}_name{viewpoint_cam.image_name}_time{viewpoint_cam.time:.2f}'
-            save_img_torch(image_to_show, f"{cfg.model_path}/log_images/{log_img_name}.jpg")
-        
+        more_to_log = {}
+        # log psnr for training
+        use_ema_train = True # recommeded
+        # use_ema_train = False # has its advantage
         with torch.no_grad():
-            tensor_dict = dict()
-            # Progress bar
-            ema_loss_for_log = 0.4 * loss.item() + 0.6 * ema_loss_for_log
-
-            # Log PSNR in tb
-            psnr_weight_ori = 0 # set to 0,then it would be compariable to the one computed in deform3dgs
-            psnr_weight_ori = 0.6 # set to 0,then it would be compariable to the one computed in deform3dgs
-            psnr_weight_current = 1-psnr_weight_ori
-            log_psnr_name = 'ema_psnr' if psnr_weight_ori != 0 else 'crt_psnr'
-
-            if renderOnce:
-                image_tissue = image_all
-                image_tool = image_all
-            if cfg.model.nsg.include_tissue:
-                # exponential moving average
-                ema_psnr_for_log_tissue = psnr_weight_current * psnr(image_tissue, gt_image, tissue_mask).mean().float() 
-                + psnr_weight_ori * ema_psnr_for_log_tissue
-                if viewpoint_cam.id not in psnr_dict_tissue:
-                    psnr_dict_tissue[viewpoint_cam.id] = psnr(image_tissue, gt_image, tissue_mask).mean().float()
-                else:
-                    psnr_dict_tissue[viewpoint_cam.id] = psnr_weight_current * psnr(image_tissue, gt_image, tissue_mask).mean().float() 
-                    + psnr_weight_ori * psnr_dict_tissue[viewpoint_cam.id]
-
-                more_to_log[f'tissue/{log_psnr_name}'] = ema_psnr_for_log_tissue
-
-            else:
-                assert 0,'alwasy include tissue'
-
-            if cfg.model.nsg.include_obj:
-                # exponential moving average
-                ema_psnr_for_log_tool = psnr_weight_current * psnr(image_tool, gt_image, tool_mask).mean().float() 
-                + psnr_weight_ori * ema_psnr_for_log_tool
-                if viewpoint_cam.id not in psnr_dict_tool:
-                    psnr_dict_tool[viewpoint_cam.id] = psnr(image_tool, gt_image, tool_mask).mean().float()
-                else:
-                    psnr_dict_tool[viewpoint_cam.id] = psnr_weight_current * psnr(image_tool, gt_image, tool_mask).mean().float() 
-                    + psnr_weight_ori * psnr_dict_tool[viewpoint_cam.id]
-
-                more_to_log[f'tool/{log_psnr_name}'] =  ema_psnr_for_log_tool
-
-            else:
-                assert 0,'alwasy include tool'
-
-
-
+            ema_psnr_for_log_tissue,ema_psnr_for_log_tool,more_to_log = \
+                compute_more_metrics(gt_image,renderOnce,image_all,cfg,tissue_mask,tool_mask,more_to_log,
+                                     use_ema=use_ema_train,
+                                     ema_psnr_for_log_tissue=ema_psnr_for_log_tissue,
+                                     ema_psnr_for_log_tool=ema_psnr_for_log_tool,
+                                     dir_append = '',
+                                     )
             if iteration % 10 == 0:
                 progress_bar.set_postfix({"Exp": f"{cfg.task}-{cfg.exp_name}", 
-                                          "Loss": f"{ema_loss_for_log:.{7}f},", 
+                                        #   "Loss": f"{ema_loss_for_log:.{7}f},", 
                                           "PSNR_tissue": f"{ema_psnr_for_log_tissue:.{4}f}",
                                           "PSNR_tool": f"{ema_psnr_for_log_tool:.{4}f}",
                                           }
@@ -426,13 +404,6 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 progress_bar.update(10)
             if iteration == training_args.iterations:
                 progress_bar.close()
-
-            # print(f'debug //{iteration}/////',
-            #       len(scene.gaussians_or_controller.poses_all_objs.opt_trans),
-            #         scene.gaussians_or_controller.poses_all_objs.opt_trans[-3:],
-            #         scene.gaussians_or_controller.poses_all_objs.input_trans[-3:],
-            #         )
-
             # Log and save
             if (iteration in training_args.save_iterations):
                 print("\n[ITER {}] Saving Gaussians".format(iteration))
@@ -444,12 +415,42 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                     if scene.gaussians_or_controller.poses_all_objs is not None:
                         state_dict = scene.gaussians_or_controller.poses_all_objs.save_state_dict()
                         torch.save(state_dict, pose_model_path)
+
+        # log psnr for test
+        use_ema_test = False # the only choice for test
+        with torch.no_grad():
+            if eval_n_log_test_cam:
+                #render first
+                test_viewpoint_stack = scene.getTestCameras().copy()
+                test_viewpoint_cam: Camera = test_viewpoint_stack.pop(randint(0, len(test_viewpoint_stack) - 1))
+
+                test_render_pkg_all,test_compo_all_gs_ordered_idx,  test_Ll1, test_loss, test_scalar_dict,\
+                    test_gt_image,test_image_all,test_tissue_mask,test_tool_mask,\
+                        test_radii_all_compo_adc,test_visibility_filters_all_compo_adc,test_model_names_all_compo_adc,\
+                            test_viewspace_point_tensors_all_compo_adcdict,test_visibility_filters_all_compo_adc,\
+                                test_model_names_all_compo_adc = render_misgs_n_compute_loss(controller,test_viewpoint_cam,cfg,training_args,optim_args,
+                                        renderOnce,compo_all_gs_ordered_renderonce,
+                                        debug_getxyz_misgs,
+                                        iteration,
+                                        skip_loss_compute=True,
+                                    )
+                # compute metric
+                ema_psnr_for_log_tissue,ema_psnr_for_log_tool,more_to_log = \
+                    compute_more_metrics(test_gt_image,renderOnce,test_image_all,cfg,test_tissue_mask,test_tool_mask,more_to_log,
+                                        use_ema=use_ema_test,
+                                        ema_psnr_for_log_tissue=ema_psnr_for_log_tissue,
+                                        ema_psnr_for_log_tool=ema_psnr_for_log_tool,
+                                        dir_append = '_test'
+                                        )
                 
 
+
+
+
+        with torch.no_grad():
             # todo:xyz_gradient_accum
             # problem lies in fusing set_max_radii2D_all_models and add_densification_stats_all_models of misgs model with its own function
             # also check out where else can leverage the idx dict properly
-
             # Densification
             if iteration < optim_args.densify_until_iter :
                 # Keep track of max radii in image-space for pruning
@@ -504,10 +505,9 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                 # controller.optimizer.zero_grad(set_to_none = True)
 
             # ////////////////////////////////////////////
-
-
+        with torch.no_grad():
             if render_stree_param_for_ori_train_report!= None:
-                training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), 
+                training_report(tb_writer, iteration, Ll1, loss, iter_start.elapsed_time(iter_end), 
                             training_args.test_iterations, scene, 
                             more_to_log = more_to_log,
                             # render,[render_stree_param_for_ori_train_report, background]
@@ -530,7 +530,61 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
 
 
+        is_save_images = True
+        # if is_save_images and (iteration % 1000 == 0):
+        if is_save_images \
+            and (iteration % 10 == 0)\
+            and iteration > int(0.9*training_args.iterations)\
+                :
+            # row0: gt_image, image, depth
+            # row1: acc, image_obj, acc_obj
+            # depth_colored, _ = visualize_depth_numpy(depth.detach().cpu().numpy().squeeze(0))
+            # depth_colored = depth_colored[..., [2, 1, 0]] / 255.
+            # depth_colored = torch.from_numpy(depth_colored).permute(2, 0, 1).float().cuda()
+            # row0 = torch.cat([gt_image, image, depth_colored], dim=2)
+            row0 = torch.cat([gt_image, gt_image,gt_image], dim=2)
+            # acc = acc.repeat(3, 1, 1)
+            with torch.no_grad():
+                bg_color = [1, 1, 1] if cfg.data.white_background else [0, 0, 0]
+                background = torch.tensor(bg_color, dtype=torch.float32, device="cuda")
 
+                image_to_show_list = [row0]
+                # if controller.obj_tool:
+                for model_name in controller.model_name_id.keys():
+                    if controller.get_visibility(model_name=model_name):
+                        sub_gs_model = getattr(controller, model_name)
+                        try:
+                            assert 'tissue' in model_name
+                            render_pkg,_= fdm_render(viewpoint_cam, sub_gs_model, cfg.render, background,
+                                                     single_compo_or_list='tissue',
+                                                     tool_parse_cam_again = False,#no need for tissue 
+                                                     )
+                        except:
+                            assert 'tool' in model_name
+                            render_pkg,_= fdm_render(viewpoint_cam, sub_gs_model, cfg.render, background,
+                                                    debug_getxyz_misgs = debug_getxyz_misgs,
+                                                    misgs_model = controller,
+                                                    single_compo_or_list='tool',
+                                                    tool_parse_cam_again = False,#no need again 
+                                                    )
+
+                        image_obj, depth_obj = render_pkg["render"], render_pkg['depth']
+
+                        depth_obj = depth_obj.repeat(3, 1, 1).to(image_obj.device) 
+                        place_holder = torch.zeros_like(depth_obj).to(depth_obj.device)
+                        row_i = torch.cat([image_obj, depth_obj, place_holder], dim=2)
+                        image_to_show_list.append(row_i)
+
+            # image_to_show = torch.cat([row0, row1], dim=1)
+            image_to_show = torch.cat(image_to_show_list, dim=1)
+            image_to_show = torch.clamp(image_to_show, 0.0, 1.0)
+            os.makedirs(f"{cfg.model_path}/log_images", exist_ok = True)
+            # save_img_torch(image_to_show, f"{cfg.model_path}/log_images/{iteration}.jpg")
+            # log_img_name = f'it{iteration}_name{viewpoint_cam.image_name}_id{viewpoint_cam.id}_time{viewpoint_cam.time}'
+            log_img_name = f'id{viewpoint_cam.id}_it{iteration}_name{viewpoint_cam.image_name}_time{viewpoint_cam.time:.2f}'
+            save_img_torch(image_to_show, f"{cfg.model_path}/log_images/{log_img_name}.jpg")
+
+        
 
 
 
@@ -607,3 +661,15 @@ def training_report_misgs(tb_writer,
         torch.cuda.empty_cache()
 
  
+
+         # if renderOnce:
+        #     #need to be 32738*3
+        #     print(f'??debug fuse: render_pkg_all viewspace_points grad {render_pkg_all["viewspace_points"].grad}')
+        #     assert render_pkg_all['viewspace_points'].grad!=None 
+        # else:
+        #     #30721*3 2017*3
+        #     try:
+        #         print(f"*************{render_pkg_tissue['viewspace_points'].grad.shape} {render_pkg_tool['viewspace_points'].grad.shape}")
+        #     except:
+        #         pass
+        # # follow deform3dgs
