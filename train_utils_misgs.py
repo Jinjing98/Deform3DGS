@@ -174,6 +174,7 @@ def render_misgs_n_compute_loss(controller,viewpoint_cam,cfg,training_args,optim
                                 skip_loss_compute = False):
     # viewpoint_cam: Camera = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
     gt_image = viewpoint_cam.original_image.cuda()
+    gt_depth = viewpoint_cam.original_depth.cuda()
     if hasattr(viewpoint_cam, 'tissue_mask'):# tissue mask
         tissue_mask = viewpoint_cam.tissue_mask.cuda().bool()
     else:
@@ -214,13 +215,14 @@ def render_misgs_n_compute_loss(controller,viewpoint_cam,cfg,training_args,optim
                                     )
         # get the dict below     
         image_all = render_pkg_all["render"]
+        depth_all = render_pkg_all["depth"]
         if not skip_loss_compute:
             Ll1 = l1_loss(image_all, gt_image, tissue_mask)
             #scalar_dict['l1_loss'] = Ll1.item()
             loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + \
                 optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), \
                                                     gt_image.to(torch.double), mask=tissue_mask))
-
+            
             Ll1_tool = l1_loss(image_all, gt_image, tool_mask)
             #scalar_dict['l1_tool_loss'] = Ll1_tool.item()
             tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
@@ -230,6 +232,34 @@ def render_misgs_n_compute_loss(controller,viewpoint_cam,cfg,training_args,optim
             loss += tool_loss
             # loss = 0*loss+tool_loss
             # loss = loss+tool_loss*0
+
+
+            #//////////////////////////////////
+            # remain tissue depth supervsion
+            use_tissue_depth = True
+            use_tool_depth = True
+            # seems not much difference?
+            # use_tissue_depth = False
+            # use_tool_depth = False
+            depth_all = depth_all.unsqueeze(0)
+            gt_depth = gt_depth.unsqueeze(0)
+            if (gt_depth!=0).sum() < 10:
+                assert 0
+                depth_loss = torch.tensor(0.).cuda()
+            else:
+                # inverse depth before compute loss
+                depth_all[depth_all!=0] = 1 / depth_all[depth_all!=0]
+                gt_depth[gt_depth!=0] = 1 / gt_depth[gt_depth!=0]
+                depth_loss = torch.tensor(0.).cuda()
+                if use_tissue_depth:
+                    depth_loss += l1_loss(depth_all, gt_depth, tissue_mask)
+                if use_tool_depth:
+                    depth_loss += l1_loss(depth_all, gt_depth, tool_mask)
+            loss += depth_loss
+            # loss = depth_loss
+            #//////////////////////////////////
+
+
 
         for model_name,(start_idx,end_idx) in compo_all_gs_ordered_idx.items():
                 model_names_all_compo_adc.append(model_name)
