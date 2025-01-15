@@ -116,7 +116,9 @@ def training_misgsmodel(args,use_streetgs_render = False,eval_n_log_test_cam =Fa
 
 
 
-def compute_more_metrics(gt_image,renderOnce,image_all,cfg,tissue_mask,tool_mask,more_to_log,
+def compute_more_metrics(gt_image,
+                         renderOnce,image_all,cfg,
+                         tissue_mask,tool_mask,more_to_log,
                             use_ema = True,
                             ema_psnr_for_log_tissue = None,
                             ema_psnr_for_log_tool = None,
@@ -147,7 +149,6 @@ def compute_more_metrics(gt_image,renderOnce,image_all,cfg,tissue_mask,tool_mask
         #     psnr_dict_tissue[viewpoint_cam.id] = psnr_weight_current * psnr(image_tissue, gt_image, tissue_mask).mean().float() 
         #     + psnr_weight_ori * psnr_dict_tissue[viewpoint_cam.id]
         more_to_log[f'tissue/{log_psnr_name}{dir_append}'] = ema_psnr_for_log_tissue
-
     else:
         assert 0,'alwasy include tissue'
 
@@ -346,8 +347,11 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
     iter_end = torch.cuda.Event(enable_timing = True)
     #streetgs traing added
     # ema_loss_for_log = 0.0
-    ema_psnr_for_log_tissue = 0.0
-    ema_psnr_for_log_tool = 0.0
+    ema_psnr_for_log_tissue_trn = 0.0
+    ema_psnr_for_log_tool_trn = 0.0
+    ema_psnr_for_log_tissue_test = 0.0
+    ema_psnr_for_log_tool_test = 0.0
+
     # psnr_dict_tissue = {}
     # psnr_dict_tool = {}
     progress_bar = tqdm(range(start_iter, training_args.iterations))
@@ -405,18 +409,19 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
         with torch.no_grad():
             # maintain more_to_log
-            ema_psnr_for_log_tissue,ema_psnr_for_log_tool,more_to_log = \
+            # udpate ema_psnr_for_log_tool ema_psnr_for_log_tissue
+            ema_psnr_for_log_tissue_trn,ema_psnr_for_log_tool_trn,more_to_log = \
                 compute_more_metrics(gt_image,renderOnce,image_all,cfg,tissue_mask,tool_mask,more_to_log,
                                      use_ema=use_ema_train,
-                                     ema_psnr_for_log_tissue=ema_psnr_for_log_tissue,
-                                     ema_psnr_for_log_tool=ema_psnr_for_log_tool,
+                                     ema_psnr_for_log_tissue=ema_psnr_for_log_tissue_trn,
+                                     ema_psnr_for_log_tool=ema_psnr_for_log_tool_trn,
                                      dir_append = '',
                                      )
             if iteration % 10 == 0:
                 progress_bar.set_postfix({"Exp": f"{cfg.task}-{cfg.exp_name}", 
                                         #   "Loss": f"{ema_loss_for_log:.{7}f},", 
-                                          "PSNR_tissue": f"{ema_psnr_for_log_tissue:.{4}f}",
-                                          "PSNR_tool": f"{ema_psnr_for_log_tool:.{4}f}",
+                                          "PSNR_tissue": f"{ema_psnr_for_log_tissue_trn:.{4}f}",
+                                          "PSNR_tool": f"{ema_psnr_for_log_tool_trn:.{4}f}",
                                           }
                                           )
                 progress_bar.update(10)
@@ -453,11 +458,11 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                                     )
                 # compute metric
                 # maintain more_to_log
-                ema_psnr_for_log_tissue,ema_psnr_for_log_tool,more_to_log = \
+                ema_psnr_for_log_tissue_test,ema_psnr_for_log_tool_test,more_to_log = \
                     compute_more_metrics(test_gt_image,renderOnce,test_image_all,cfg,test_tissue_mask,test_tool_mask,more_to_log,
                                         use_ema=use_ema_test,
-                                        ema_psnr_for_log_tissue=ema_psnr_for_log_tissue,
-                                        ema_psnr_for_log_tool=ema_psnr_for_log_tool,
+                                        ema_psnr_for_log_tissue=ema_psnr_for_log_tissue_test,
+                                        ema_psnr_for_log_tool=ema_psnr_for_log_tool_test,
                                         dir_append = '_test'
                                         )
                 
