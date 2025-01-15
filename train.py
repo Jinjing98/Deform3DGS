@@ -170,6 +170,10 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
         assert isinstance(scene.gaussians_or_controller, TissueGaussianModel)
         more_to_log[f'tissue/{log_psnr_name}'] = ema_psnr_for_log_tissue
         more_to_log[f'tool/{log_psnr_name}'] = ema_psnr_for_log_tool
+        #///////////////////////////////////////////////////
+
+
+
         loss = Ll1 + depth_loss 
         
         loss.backward()
@@ -192,7 +196,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
 
             # Log and save
             timer.pause()
-            training_report(tb_writer, iteration, Ll1, loss, l1_loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, 
+            training_report(tb_writer, iteration, Ll1, loss, iter_start.elapsed_time(iter_end), testing_iterations, scene, 
                             # render, [pipe, background],
                             more_to_log=more_to_log,
                             )
@@ -323,7 +327,7 @@ def prepare_output_and_logger(model_path,write_args = None):
         print("Tensorboard not available: not logging progress")
     return tb_writer
 
-def training_report(tb_writer, iteration, Ll1, loss, l1_loss, elapsed, testing_iterations, scene : Scene, 
+def training_report(tb_writer, iteration, Ll1, loss, elapsed, testing_iterations, scene : Scene, 
                     # renderFunc, renderArgs,
                     more_to_log = {},
                     ):
@@ -402,8 +406,13 @@ if __name__ == "__main__":
     # Set up command line argument parser
     # torch.set_default_tensor_type('torch.FloatTensor')
     torch.cuda.empty_cache()
+
+    #misgs hard code
+    eval_n_log_test_cam = False
+    eval_n_log_test_cam = True
+
     use_stree_grouping_strategy = True
-    use_stree_grouping_strategy = False
+    # use_stree_grouping_strategy = False
 
     if use_stree_grouping_strategy:
         use_streetgs_render = True #fail
@@ -493,6 +502,8 @@ if __name__ == "__main__":
 
 
         from train_utils_misgs import training_misgsmodel
-        training_misgsmodel(args, use_streetgs_render = use_streetgs_render)
+        training_misgsmodel(args, use_streetgs_render = use_streetgs_render,
+                                eval_n_log_test_cam = eval_n_log_test_cam,
+                            )
     # All done
     print("\nTraining complete.", args.model_path)

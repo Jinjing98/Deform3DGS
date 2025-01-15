@@ -50,10 +50,25 @@ except ImportError:
 
 # def training_misgsmodel(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, expname, extra_mark):
 def training_misgsmodel(args,use_streetgs_render = False,eval_n_log_test_cam =False):
+    #///////////////////////////////////////
+    #hard code
+    renderOnce = False
+    renderOnce = True  
+    compo_all_gs_ordered_renderonce=['tissue','obj_tool1']
+    # compo_all_gs_ordered_renderonce=['tissue']
+    # compo_all_gs_ordered_renderonce=['obj_tool1']
+
+    # log tb
+    # use_ema_train = True # recommeded
+    use_ema_train = False # has its advantage
+    use_ema_test = False # the only choice for test
+    
     other_param_dict = None
     dbg_print = True
     dbg_print = False
     remain_redundant = True
+    #///////////////////////////////////////
+
     # # have to use streetgs cam model
     from config.argsgroup2cn import perform_args2cfg
     cfg, others = perform_args2cfg(args,
@@ -84,12 +99,19 @@ def training_misgsmodel(args,use_streetgs_render = False,eval_n_log_test_cam =Fa
     scene.gs_init(gaussians_or_controller=controller,
                   reset_camera_extent=mod_stree_param.camera_extent)
     timer.start()
+
+
+
+
     scene_reconstruction_misgs(cfg = cfg, controller = controller,
                                scene = scene, tb_writer = tb_writer,
                                render_stree_param_for_ori_train_report = render_stree_param,
                                 use_streetgs_render = use_streetgs_render,
-                                eval_n_log_test_cam = eval_n_log_test_cam,
-                               
+                                eval_n_log_test_cam = eval_n_log_test_cam,  
+                                renderOnce=renderOnce,
+                                compo_all_gs_ordered_renderonce=compo_all_gs_ordered_renderonce,
+                                use_ema_train=use_ema_train,
+                                use_ema_test=use_ema_test,
                                )
 
 
@@ -292,7 +314,11 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                                debug_getxyz_misgs = True,
                             #    debug_getxyz_misgs = False,
                                eval_n_log_test_cam = False,
-                               
+                                renderOnce = True,
+                                compo_all_gs_ordered_renderonce=['tissue','obj_tool1'],
+                                # use_ema_train = True # recommeded,
+                                use_ema_train = False,
+                                use_ema_test = False, # the only choice for test
                                ):
     
     print('/////////////************/////////////')
@@ -353,14 +379,6 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
         # print("Loading Training Cameras")
         # self.train_camera = scene_info.train_cameras 
 
-        #hard code
-        renderOnce = False
-        renderOnce = True  
-        compo_all_gs_ordered_renderonce=['tissue','obj_tool1']
-        # compo_all_gs_ordered_renderonce=['tissue']
-        # compo_all_gs_ordered_renderonce=['obj_tool1']
-
-
         viewpoint_cam: Camera = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
 
         render_pkg_all,compo_all_gs_ordered_idx,  Ll1, loss, scalar_dict,\
@@ -384,9 +402,9 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
         more_to_log = {}
         # log psnr for training
-        use_ema_train = True # recommeded
-        # use_ema_train = False # has its advantage
+
         with torch.no_grad():
+            # maintain more_to_log
             ema_psnr_for_log_tissue,ema_psnr_for_log_tool,more_to_log = \
                 compute_more_metrics(gt_image,renderOnce,image_all,cfg,tissue_mask,tool_mask,more_to_log,
                                      use_ema=use_ema_train,
@@ -417,7 +435,6 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                         torch.save(state_dict, pose_model_path)
 
         # log psnr for test
-        use_ema_test = False # the only choice for test
         with torch.no_grad():
             if eval_n_log_test_cam:
                 #render first
@@ -435,6 +452,7 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                                         skip_loss_compute=True,
                                     )
                 # compute metric
+                # maintain more_to_log
                 ema_psnr_for_log_tissue,ema_psnr_for_log_tool,more_to_log = \
                     compute_more_metrics(test_gt_image,renderOnce,test_image_all,cfg,test_tissue_mask,test_tool_mask,more_to_log,
                                         use_ema=use_ema_test,
