@@ -39,9 +39,109 @@ try:
 except ImportError:
     TENSORBOARD_FOUND = False
 
+def compute_more_metrics_for_all_cams(image_tensor,gt_image_tensor,
+                                        mask_tensor,mask_tissue_dbg_tensor,
+                                        dataset,
+                                        more_to_log,
+                                        use_ema = False,
+                                        ema_psnr_for_log_tissue = None,
+                                        ema_psnr_for_log_tool = None,
+                                        dir_append = ''
+                            ):
+    # compute more metric 
+    # during training
+    if dataset.tool_mask == 'use':
+        tissue_mask_tensor = mask_tensor
+        tool_mask_tensor = ~mask_tensor
+    elif dataset.tool_mask == 'inverse':
+        tool_mask_tensor = mask_tensor
+        tissue_mask_tensor = ~mask_tensor
+    elif dataset.tool_mask == 'nouse':  
+        # assert 0, 'todo try to use the actual mask saved in camera'
+        # tool_mask_tensor = torch.zeros_like(mask_tensor)
+        tissue_mask_tensor = mask_tissue_dbg_tensor #mask_tensor
+        tool_mask_tensor = ~mask_tissue_dbg_tensor
+    else:
+        assert 0,dataset.tool_mask
+    # Log PSNR in tb
+    psnr_weight_ori = 0.6 if use_ema else 0# set to 0,then it would be compariable to the one computed in deform3dgs
+    psnr_weight_current = 1-psnr_weight_ori
+    log_psnr_name = 'ema_psnr' if use_ema else 'crt_psnr'
+
+
+    # psnr_ = psnr(image_tensor, gt_image_tensor, mask_tensor).mean().double()
+    ema_psnr_for_log_tissue = psnr_weight_current * psnr(image_tensor, gt_image_tensor, 
+                                                tissue_mask_tensor).mean().double()
+    + psnr_weight_ori * ema_psnr_for_log_tissue
+
+    ema_psnr_for_log_tool = psnr_weight_current * psnr(image_tensor, gt_image_tensor, 
+                                                tool_mask_tensor).mean().double()
+    + psnr_weight_ori * ema_psnr_for_log_tool
+
+
+    more_to_log[f'tissue/{log_psnr_name}{dir_append}'] = ema_psnr_for_log_tissue
+    more_to_log[f'tool/{log_psnr_name}{dir_append}'] = ema_psnr_for_log_tool
+    return  more_to_log,ema_psnr_for_log_tissue,ema_psnr_for_log_tool
+    #///////////////////////////////////////////////////
+
+def render_viewpoint_cams(viewpoint_cams,gaussians, pipe, background):
+
+    images = []
+    depths = []
+    gt_images = []
+    gt_depths = []
+    masks = []
+    masks_tissue_dbg = []
+    
+    radii_list = []
+    visibility_filter_list = []
+    viewspace_point_tensor_list = []
+    
+    for viewpoint_cam in viewpoint_cams:
+        # also singel frame
+        assert len(viewpoint_cams)==1
+        viewpoint_cam = viewpoint_cams[0]
+        render_pkg,_ = fdm_render(viewpoint_cam, gaussians, pipe, background,
+                            single_compo_or_list='tissue')
+        image, depth, viewspace_point_tensor, visibility_filter, radii = \
+            render_pkg["render"], render_pkg["depth"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
+        gt_image = viewpoint_cam.original_image.cuda().float()
+        gt_depth = viewpoint_cam.original_depth.cuda().float()
+        mask = viewpoint_cam.mask.cuda()
+        mask_tissue_dbg = viewpoint_cam.raw_tissue_mask.cuda()
+        images.append(image.unsqueeze(0))
+        depths.append(depth.unsqueeze(0))
+        gt_images.append(gt_image.unsqueeze(0))
+        gt_depths.append(gt_depth.unsqueeze(0))
+        masks.append(mask.unsqueeze(0))
+        masks_tissue_dbg.append(mask_tissue_dbg.unsqueeze(0))
+        radii_list.append(radii.unsqueeze(0))
+        visibility_filter_list.append(visibility_filter.unsqueeze(0))
+        viewspace_point_tensor_list.append(viewspace_point_tensor)
+
+    radii = torch.cat(radii_list,0).max(dim=0).values
+    visibility_filter = torch.cat(visibility_filter_list).any(dim=0)
+    image_tensor = torch.cat(images,0)
+    depth_tensor = torch.cat(depths, 0)
+    gt_image_tensor = torch.cat(gt_images,0)
+    gt_depth_tensor = torch.cat(gt_depths, 0)
+    mask_tensor = torch.cat(masks, 0)
+    mask_tissue_dbg_tensor = torch.cat(masks_tissue_dbg, 0)
+
+    return image_tensor,depth_tensor,gt_image_tensor,gt_depth_tensor,mask_tensor,mask_tissue_dbg_tensor,\
+    viewspace_point_tensor_list, radii,visibility_filter
+
+
+
+
 def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_iterations, 
                          checkpoint_iterations, checkpoint, debug_from,
-                         gaussians, scene, tb_writer, train_iter, timer):
+                         gaussians, scene, tb_writer, train_iter, timer,
+                         eval_n_log_test_cam = False,
+                         use_ema_train=False,
+                         use_ema_test=False,                         
+                    
+                         ):
     first_iter = 0
     gaussians.training_setup(opt)
     if checkpoint:
@@ -62,16 +162,20 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
     first_iter += 1
     
     # lpips_model = lpips.LPIPS(net="vgg").cuda()
-    video_cams = scene.getVideoCameras()
+    # video_cams = scene.getVideoCameras()
     
     if not viewpoint_stack:
         viewpoint_stack = scene.getTrainCameras()
         
     # ema_psnr_for_log = 0
-    ema_psnr_for_log_tissue = 0
-    ema_psnr_for_log_tool = 0
-    for iteration in range(first_iter, final_iter+1):        
+    # ema_psnr_for_log_tissue = 0
+    # ema_psnr_for_log_tool = 0
+    ema_psnr_for_log_tissue_trn = 0.0
+    ema_psnr_for_log_tool_trn = 0.0
+    ema_psnr_for_log_tissue_test = 0.0
+    ema_psnr_for_log_tool_test = 0.0
 
+    for iteration in range(first_iter, final_iter+1):        
         iter_start.record()
         gaussians.update_learning_rate(iteration)
         # Every 1000 its we increase the levels of SH up to a maximum degree
@@ -85,47 +189,12 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
         # Render
         if (iteration - 1) == debug_from:
             pipe.debug = True
-            
-        images = []
-        depths = []
-        gt_images = []
-        gt_depths = []
-        masks = []
-        masks_tissue_dbg = []
-        
-        radii_list = []
-        visibility_filter_list = []
-        viewspace_point_tensor_list = []
-        
-        for viewpoint_cam in viewpoint_cams:
-            render_pkg,_ = fdm_render(viewpoint_cam, gaussians, pipe, background,
-                                single_compo_or_list='tissue')
-            image, depth, viewspace_point_tensor, visibility_filter, radii = \
-                render_pkg["render"], render_pkg["depth"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
-            gt_image = viewpoint_cam.original_image.cuda().float()
-            gt_depth = viewpoint_cam.original_depth.cuda().float()
-            mask = viewpoint_cam.mask.cuda()
-            mask_tissue_dbg = viewpoint_cam.raw_tissue_mask.cuda()
-            images.append(image.unsqueeze(0))
-            depths.append(depth.unsqueeze(0))
-            gt_images.append(gt_image.unsqueeze(0))
-            gt_depths.append(gt_depth.unsqueeze(0))
-            masks.append(mask.unsqueeze(0))
-            masks_tissue_dbg.append(mask_tissue_dbg.unsqueeze(0))
-            radii_list.append(radii.unsqueeze(0))
-            visibility_filter_list.append(visibility_filter.unsqueeze(0))
-            viewspace_point_tensor_list.append(viewspace_point_tensor)
 
-        radii = torch.cat(radii_list,0).max(dim=0).values
-        visibility_filter = torch.cat(visibility_filter_list).any(dim=0)
-        image_tensor = torch.cat(images,0)
-        depth_tensor = torch.cat(depths, 0)
-        gt_image_tensor = torch.cat(gt_images,0)
-        gt_depth_tensor = torch.cat(gt_depths, 0)
-        mask_tensor = torch.cat(masks, 0)
-        mask_tissue_dbg_tensor = torch.cat(masks_tissue_dbg, 0)
-        
-        more_to_log = {}
+        # render 
+        assert len(viewpoint_cams)==1
+        image_tensor,depth_tensor,gt_image_tensor,gt_depth_tensor,mask_tensor,mask_tissue_dbg_tensor,\
+            viewspace_point_tensor_list,radii, visibility_filter = render_viewpoint_cams(viewpoint_cams,gaussians, pipe, background)
+
 
         Ll1 = l1_loss(image_tensor, gt_image_tensor, mask_tensor)
         
@@ -137,58 +206,60 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
      
             depth_loss = l1_loss(depth_tensor, gt_depth_tensor, mask_tensor)
         
-        #///////////////////////////////////////////////////
-        if dataset.tool_mask == 'use':
-            tissue_mask_tensor = mask_tensor
-            tool_mask_tensor = ~mask_tensor
-        elif dataset.tool_mask == 'inverse':
-            tool_mask_tensor = mask_tensor
-            tissue_mask_tensor = ~mask_tensor
-        elif dataset.tool_mask == 'nouse':  
-            # assert 0, 'todo try to use the actual mask saved in camera'
-            # tool_mask_tensor = torch.zeros_like(mask_tensor)
-            tissue_mask_tensor = mask_tissue_dbg_tensor #mask_tensor
-            tool_mask_tensor = ~mask_tissue_dbg_tensor
-        else:
-            assert 0,dataset.tool_mask
-        # Log PSNR in tb
-        psnr_weight_ori = 0 # set to 0,then it would be compariable to the one computed in deform3dgs
-        psnr_weight_ori = 0.6 # set to 0,then it would be compariable to the one computed in deform3dgs
-        psnr_weight_current = 1-psnr_weight_ori
-        log_psnr_name = 'ema_psnr' if psnr_weight_ori != 0 else 'crt_psnr'
-
-        # psnr_ = psnr(image_tensor, gt_image_tensor, mask_tensor).mean().double()
-        ema_psnr_for_log_tissue = psnr_weight_current * psnr(image_tensor, gt_image_tensor, 
-                                                      tissue_mask_tensor).mean().double()
-        + psnr_weight_ori * ema_psnr_for_log_tissue
-
-        ema_psnr_for_log_tool = psnr_weight_current * psnr(image_tensor, gt_image_tensor, 
-                                                      tool_mask_tensor).mean().double()
-        + psnr_weight_ori * ema_psnr_for_log_tool
-
- 
-        assert isinstance(scene.gaussians_or_controller, TissueGaussianModel)
-        more_to_log[f'tissue/{log_psnr_name}'] = ema_psnr_for_log_tissue
-        more_to_log[f'tool/{log_psnr_name}'] = ema_psnr_for_log_tool
-        #///////////////////////////////////////////////////
-
-
-
         loss = Ll1 + depth_loss 
-        
         loss.backward()
-        viewspace_point_tensor_grad = torch.zeros_like(viewspace_point_tensor)
+
+        # viewspace_point_tensor_grad = torch.zeros_like(viewspace_point_tensor)
+        viewspace_point_tensor_grad = torch.zeros_like(viewspace_point_tensor_list[-1])
         for idx in range(0, len(viewspace_point_tensor_list)):
             viewspace_point_tensor_grad = viewspace_point_tensor_grad + viewspace_point_tensor_list[idx].grad
         iter_end.record()
+
+        #///////////////////////////////////////////////////
+        # log psnr for train
+        with torch.no_grad():
+            more_to_log = {}
+            assert isinstance(scene.gaussians_or_controller, TissueGaussianModel)
+            more_to_log,ema_psnr_for_log_tissue_trn,ema_psnr_for_log_tool_trn = compute_more_metrics_for_all_cams(image_tensor,gt_image_tensor,
+                                                mask_tensor,mask_tissue_dbg_tensor,
+                                                dataset,
+                                                more_to_log,
+                                                use_ema = use_ema_train,
+                                                ema_psnr_for_log_tissue = ema_psnr_for_log_tissue_trn,
+                                                ema_psnr_for_log_tool = ema_psnr_for_log_tool_trn,
+                                                dir_append = '', #also rand singel
+                                                )
+        # log psnr for test
+        with torch.no_grad():
+            if eval_n_log_test_cam:
+                #render first
+                from scene.cameras import Camera
+
+                test_viewpoint_stack = scene.getTestCameras().copy()
+                test_viewpoint_cam: Camera = test_viewpoint_stack.pop(randint(0, len(test_viewpoint_stack) - 1))
+                test_viewpoint_cams = [test_viewpoint_cam]
+                
+                assert len(test_viewpoint_cams)==1
+                test_image_tensor,test_depth_tensor,test_gt_image_tensor,test_gt_depth_tensor,test_mask_tensor,test_mask_tissue_dbg_tensor,\
+                    test_viewspace_point_tensor_list,test_radii,test_visibility_filter = render_viewpoint_cams(test_viewpoint_cams,gaussians, pipe, background)
+
+                more_to_log,ema_psnr_for_log_tissue_test,ema_psnr_for_log_tool_test = compute_more_metrics_for_all_cams(test_image_tensor,test_gt_image_tensor,
+                                                    test_mask_tensor,test_mask_tissue_dbg_tensor,
+                                                    dataset,
+                                                    more_to_log,
+                                                    use_ema = use_ema_test,
+                                                    ema_psnr_for_log_tissue = ema_psnr_for_log_tissue_test,
+                                                    ema_psnr_for_log_tool = ema_psnr_for_log_tool_test,
+                                                    dir_append = '_test',
+                                                    )
 
         with torch.no_grad():
             # Progress bar
             total_point = gaussians._xyz.shape[0]
             if iteration % 10 == 0:
                 progress_bar.set_postfix({"Loss": f"{loss.item():.{7}f}",
-                                          f"psnr_tissue": f"{ema_psnr_for_log_tissue:.{2}f}",
-                                          f"psnr_tool": f"{ema_psnr_for_log_tool:.{2}f}",
+                                          f"psnr_tissue": f"{ema_psnr_for_log_tissue_trn:.{2}f}",
+                                          f"psnr_tool": f"{ema_psnr_for_log_tool_trn:.{2}f}",
                                           "point":f"{total_point}"})
                 progress_bar.update(10)
             if iteration == opt.iterations:
@@ -288,7 +359,14 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
                 print("\n[ITER {}] Saving Checkpoint".format(iteration))
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
-def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, expname, extra_mark,args = None):
+def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, expname, extra_mark,args = None,
+             eval_n_log_test_cam = False):
+
+    use_ema_test=False
+    use_ema_train=False
+    # use_ema_train=True
+    # use_ema_test=True
+
     assert expname == args.model_path, f'{expname} {args.model_path}'
     tb_writer = prepare_output_and_logger(model_path=expname, write_args=args)
     gaussians = TissueGaussianModel(dataset.sh_degree, hyper)
@@ -303,7 +381,11 @@ def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, c
     #actual data loading
     scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_iterations,
                          checkpoint_iterations, checkpoint, debug_from,
-                         gaussians, scene, tb_writer, opt.iterations,timer)
+                         gaussians, scene, tb_writer, opt.iterations,timer,
+                         eval_n_log_test_cam = eval_n_log_test_cam,
+                         use_ema_train=use_ema_train,
+                         use_ema_test=use_ema_test,  
+                         )
 
 def prepare_output_and_logger(model_path,write_args = None):  
     # if write_args.disable_tb=='Y':
@@ -412,8 +494,7 @@ if __name__ == "__main__":
     eval_n_log_test_cam = True
 
     use_stree_grouping_strategy = True
-    # use_stree_grouping_strategy = False
-
+    use_stree_grouping_strategy = False
     if use_stree_grouping_strategy:
         use_streetgs_render = True #fail
         use_streetgs_render = False
@@ -483,7 +564,10 @@ if __name__ == "__main__":
         training(lp.extract(args), hp.extract(args), op.extract(args), pp.extract(args), args.test_iterations, \
             args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname, 
             extra_mark=args.extra_mark,
-            args = args)
+            args = args,
+            eval_n_log_test_cam = eval_n_log_test_cam,
+            
+            )
     else:
         # save args in model_path for offline rendering
         # Save the 'args' object to a file
