@@ -111,3 +111,60 @@ def _ssim(img1, img2, window, window_size, channel, size_average=True):
     else:
         return ssim_map.mean(1).mean(1).mean(1)
 
+
+
+
+
+if __name__ == "__main__":
+    pass
+    # from pytorch3d.io import load_ply
+    # from pytorch3d.ops import ball_query
+    # import pickle
+    # with open("./control_kpt.pkl", "rb") as f:
+    #     data = pickle.load(f)
+
+    # points = data["pts"]
+    # handle_idx = data["handle_idx"]
+    # handle_pos = data["handle_pos"]
+
+    # import trimesh
+    # trimesh.Trimesh(vertices=points).export('deformation_before.ply')
+
+    # #### prepare data
+    # points = torch.from_numpy(points).float().cuda()
+    # handle_idx = torch.tensor(handle_idx).long().cuda()
+    # handle_pos = torch.from_numpy(handle_pos).float().cuda()
+
+    # deformer = ARAPDeformer(points)
+
+    # with torch.no_grad():
+    #     points_prime, p_prime_seq = deformer.deform(handle_idx, handle_pos)
+
+    # trimesh.Trimesh(vertices=points_prime.cpu().numpy()).export('deformation_after.ply')
+
+    # from utils.deform_utils import cal_arap_error
+    # for p_prime in p_prime_seq:
+    #     nodes_sequence = torch.cat([points[None], p_prime[None]], dim=0)
+    #     arap_error = cal_arap_error(nodes_sequence, deformer.ii, deformer.jj, deformer.nn, K=deformer.K, weight=deformer.normalized_weight)
+    #     print(arap_error)
+
+
+
+    # arap_loss(self, t=None, delta_t=0.05, t_samp_num=2):
+        # t = torch.rand([]).cuda() if t is None else t.squeeze() + delta_t * (torch.rand([]).cuda() - .5)
+        # t_samp = torch.rand(t_samp_num).cuda() * delta_t + t - .5 * delta_t
+        # # M 512?
+        # t_samp = t_samp[None, :, None].expand(self.node_num, t_samp_num, 1)  # M, T, 1
+        # node_trans = self.node_deform(t=t_samp)['d_xyz']
+        # nodes_t = self.nodes[:, None, :3].detach() + node_trans  # M, T, 3
+        # hyper_nodes = nodes_t[:,0]  # M, 3
+        # # K constrain the nbr area
+        # ii, jj, nn, weight = cal_connectivity_from_points(hyper_nodes, K=10)  # connectivity of control nodes
+        # error = cal_arap_error(nodes_t.permute(1,0,2), ii, jj, nn)
+        # return error
+
+
+    # import sys
+    # sys.path.append('/mnt/ceph/tco/TCO-Staff/Homes/jinjing/proj/gs/baselines/SC-GS/utils')
+    # from deform_utils import cal_connectivity_from_points,cal_arap_error
+    # # from utils.deform_utils import cal_connectivity_from_points, cal_arap_error, arap_deformation_loss

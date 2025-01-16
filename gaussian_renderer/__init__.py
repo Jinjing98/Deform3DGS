@@ -307,7 +307,7 @@ def render_flow(viewpoint_camera,
     
     from utils.scene_utils import vis_torch_img
     vis_img_debug = False
-    vis_img_debug = True
+    # vis_img_debug = True
     if vis_img_debug:
         if isinstance(single_compo_or_list,list):
             window_topic = f'compo_{single_compo_or_list}_renderObjsOnce'

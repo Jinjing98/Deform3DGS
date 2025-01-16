@@ -28,7 +28,7 @@ OptimizationParams = dict(
     deformation_lr_init = 0.00016,
     deformation_lr_final = 0.0000016,
     deformation_lr_delay_mult = 0.01,
-    iterations = 3000,
+    iterations = 1000,
     opacity_reset_interval = 3000,
     position_lr_max_steps = 4000,
     # prune_interval = 3000, #? wrong-not-used?
@@ -36,7 +36,7 @@ OptimizationParams = dict(
     #jj
     densification_interval = 100,
     densify_from_iter = 500,
-    # densify_until_iter = -1,#700,#15_000,
+    # densify_until_iter = -1,#700,#15_000, #-1 means no densify
     densify_until_iter = 700,#15_000,
     densify_grad_threshold_coarse = 0.0002,
     densify_grad_threshold_fine_init = 0.0002,

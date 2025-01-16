@@ -480,8 +480,6 @@ def setup_seed(seed):
      torch.backends.cudnn.deterministic = True
 
 if __name__ == "__main__":
-    
-    
     # import os
     # os.environ["CUDA_LAUNCH_BLOCKING"] = "1"
 
@@ -489,15 +487,20 @@ if __name__ == "__main__":
     # torch.set_default_tensor_type('torch.FloatTensor')
     torch.cuda.empty_cache()
 
-    #misgs hard code
-    eval_n_log_test_cam = False
-    eval_n_log_test_cam = True
-
     use_stree_grouping_strategy = True
     use_stree_grouping_strategy = False
     if use_stree_grouping_strategy:
-        use_streetgs_render = True #fail
-        use_streetgs_render = False
+        # use_streetgs_render = True #fail  potential to replace renderonce?
+        # use_streetgs_render = False
+        tool_mask_loss_src = ['depth','color']
+        tissue_mask_loss_src = ['depth','color']
+    else:
+        # deform3dgs setting
+        tool_mask_loss_src = []
+        tissue_mask_loss_src = ['depth','color']
+    #misgs hard code
+    eval_n_log_test_cam = False
+    eval_n_log_test_cam = True
 
 
     parser = ArgumentParser(description="Training script parameters")
@@ -524,25 +527,34 @@ if __name__ == "__main__":
         from utils.params_utils import merge_hparams
         config = mmcv.Config.fromfile(args.configs)
         args = merge_hparams(args, config)
+        #/////////////////////////////////////
         #update with tool_info automatically
-        expname_append = ''
-        if hasattr(args,'tool_mask'):
-            expname_append += f'_{args.tool_mask}'
-        if hasattr(args,'init_mode'):
-            expname_append += f'_{args.init_mode}'
+        mask_append = ''
+        optim_append = ''
+        loss_append = ''
         if use_stree_grouping_strategy:
+            # set up exclusive for misgs
             assert args.tool_mask == 'use',f' for misgs,we let tool_mask be use n get all masks'
-
             #pose related setting
-            expname_append += f'_{args.track_warmup_steps}_extent{args.camera_extent}_space{args.obj_pose_rot_optim_space}_{args.obj_pose_init}init'
+            optim_append += f'_{args.track_warmup_steps}_extent{args.camera_extent}_space{args.obj_pose_rot_optim_space}_{args.obj_pose_init}init'
+        else:
+            # set up exclusive for deform3dgs
+            pass
+        # shared by both
+        if hasattr(args,'tool_mask'):
+            mask_append += f'_{args.tool_mask}'
+        if hasattr(args,'init_mode'):
+            mask_append += f'_{args.init_mode}'
+        loss_append = ''
+        #/////////////////////////////////////
 
 
+
+        expname_append = f'{mask_append}{optim_append}{loss_append}'        
         assert args.disable_tb in ['Y','N']
         if args.disable_tb == 'Y':
             expname_append += '_NOTB'
-
         setattr(args, 'expname', f'{args.expname}{expname_append}')
-        
         if 'pulling' in args.source_path or 'cutting' in args.source_path:
             pass
             print('TODO','nouse and inverse might be problematic---the data gt depth always masked tool region....')
@@ -586,7 +598,8 @@ if __name__ == "__main__":
 
 
         from train_utils_misgs import training_misgsmodel
-        training_misgsmodel(args, use_streetgs_render = use_streetgs_render,
+        training_misgsmodel(args, 
+                            # use_streetgs_render = use_streetgs_render,
                                 eval_n_log_test_cam = eval_n_log_test_cam,
                             )
     # All done

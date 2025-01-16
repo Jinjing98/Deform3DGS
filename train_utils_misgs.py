@@ -49,7 +49,9 @@ except ImportError:
 
 
 # def training_misgsmodel(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, expname, extra_mark):
-def training_misgsmodel(args,use_streetgs_render = False,eval_n_log_test_cam =False):
+def training_misgsmodel(args,
+                        # use_streetgs_render = False,
+                        eval_n_log_test_cam =False):
     #///////////////////////////////////////
     #hard code
     renderOnce = False
@@ -106,7 +108,7 @@ def training_misgsmodel(args,use_streetgs_render = False,eval_n_log_test_cam =Fa
     scene_reconstruction_misgs(cfg = cfg, controller = controller,
                                scene = scene, tb_writer = tb_writer,
                                render_stree_param_for_ori_train_report = render_stree_param,
-                                use_streetgs_render = use_streetgs_render,
+                                # use_streetgs_render = use_streetgs_render,
                                 eval_n_log_test_cam = eval_n_log_test_cam,  
                                 renderOnce=renderOnce,
                                 compo_all_gs_ordered_renderonce=compo_all_gs_ordered_renderonce,
@@ -219,15 +221,17 @@ def render_misgs_n_compute_loss(controller,viewpoint_cam,cfg,training_args,optim
         if not skip_loss_compute:
             Ll1 = l1_loss(image_all, gt_image, tissue_mask)
             #scalar_dict['l1_loss'] = Ll1.item()
-            loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + \
-                optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), \
-                                                    gt_image.to(torch.double), mask=tissue_mask))
-            
+            # loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + \
+                # optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), \
+                                                    # gt_image.to(torch.double), mask=tissue_mask))
+            loss = Ll1
+
             Ll1_tool = l1_loss(image_all, gt_image, tool_mask)
             #scalar_dict['l1_tool_loss'] = Ll1_tool.item()
-            tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
-                + optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), gt_image.to(torch.double), \
-                                                        mask=tool_mask))
+            # tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
+                # + optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), gt_image.to(torch.double), \
+                                                        # mask=tool_mask))
+            tool_loss = Ll1_tool
             # more recommended than edit order list
             loss += tool_loss
             # loss = 0*loss+tool_loss
@@ -239,8 +243,8 @@ def render_misgs_n_compute_loss(controller,viewpoint_cam,cfg,training_args,optim
             use_tissue_depth = True
             use_tool_depth = True
             # seems not much difference?
-            # use_tissue_depth = False
-            # use_tool_depth = False
+            use_tissue_depth = False
+            use_tool_depth = False
             depth_all = depth_all.unsqueeze(0)
             gt_depth = gt_depth.unsqueeze(0)
             if (gt_depth!=0).sum() < 10:
@@ -341,7 +345,7 @@ def render_misgs_n_compute_loss(controller,viewpoint_cam,cfg,training_args,optim
 
 def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                                render_stree_param_for_ori_train_report = None,
-                               use_streetgs_render = False,
+                            #    use_streetgs_render = False,
                                debug_getxyz_misgs = True,
                             #    debug_getxyz_misgs = False,
                                eval_n_log_test_cam = False,
