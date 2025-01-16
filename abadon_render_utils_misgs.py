@@ -36,7 +36,7 @@ def render_set_misgs(model_path, name, iteration, views, gaussians, pipeline, ba
     if which_model == 'tissue':
         render_func = fdm_render
     elif which_model == 'obj_tool1':
-        from gaussian_renderer.tool_renderer import tool_render
+        from baselines.Deform3DGS.gaussian_renderer.abadon_tool_renderer import tool_render
         render_func = fdm_render
         render_func = tool_render
         assert 0,'to do'
@@ -163,6 +163,7 @@ def render_sets_misgs(
                 which_model = 'tissue',
                 cfg_path = '', 
                 ):
+    # assert 0, NotImplementedError
     from scene.mis_gaussian_model import MisGaussianModel
     from config.yacs import load_cfg
     with open(cfg_path, 'r') as f:

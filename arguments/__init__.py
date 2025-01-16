@@ -62,6 +62,26 @@ class ModelParams(ParamGroup):
         self.tool_mask = None
         self.init_mode = None
         self.load_cotrackerPnpPose = False
+
+
+        #jj extend: misgs only
+        self.renderOnce = True
+        self.compo_all_gs_ordered_renderonce = ['tissue','obj_tool1']
+        self.remain_redundant_default_param = True
+        self.sepearte_render_n_save = True
+        
+        #jj extend: shared
+        self.eval_n_log_test_cam = False
+        self.use_ema_train = False
+        self.use_ema_test = False
+
+        self.dbg_print = False
+        # self.dbg_vis_render = False
+        self.dbg_vis_adc = False
+
+        self.tool_mask_loss_src = []
+        self.tissue_mask_loss_src = ['depth','color']
+
         super().__init__(parser, "Loading Parameters", sentinel)
 
     def extract(self, args):
@@ -74,6 +94,10 @@ class PipelineParams(ParamGroup):
         self.convert_SHs_python = False
         self.compute_cov3D_python = False
         self.debug = False
+        
+        #jj
+        self.dbg_vis_render = False
+
         super().__init__(parser, "Pipeline Parameters")
 
         
@@ -161,7 +185,8 @@ def ambigious_search_cfg(args_cmdline):
 
 # only used for offline rendering
 def get_combined_args(parser : ArgumentParser, 
-                      offline_eval = True):
+                      insist = True,
+                      ):
     cmdlne_string = sys.argv[1:]
     cfgfile_string = "Namespace()"
     args_cmdline = parser.parse_args(cmdlne_string)
@@ -175,7 +200,7 @@ def get_combined_args(parser : ArgumentParser,
             cfgfile_string = cfg_file.read()
     except TypeError:
         print("Config file not found at")
-        if offline_eval:
+        if insist:
             assert 0, f'missing {cfgfilepath} for the exp...'
         pass
     args_cfgfile = eval(cfgfile_string)

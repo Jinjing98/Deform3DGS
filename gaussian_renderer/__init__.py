@@ -73,6 +73,9 @@ def render_flow(viewpoint_camera,
                  misgs_model = None,
                  single_compo_or_list = 'tissue',
                  tool_parse_cam_again = True,
+                 vis_img_debug = False,
+                #  vis_img_debug = True
+
                  ):
     """
     Render the scene. 
@@ -306,8 +309,6 @@ def render_flow(viewpoint_camera,
     rendered_image_vis = rendered_image.detach().to('cpu')
     
     from utils.scene_utils import vis_torch_img
-    vis_img_debug = False
-    # vis_img_debug = True
     if vis_img_debug:
         if isinstance(single_compo_or_list,list):
             window_topic = f'compo_{single_compo_or_list}_renderObjsOnce'

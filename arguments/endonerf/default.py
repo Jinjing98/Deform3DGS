@@ -16,6 +16,32 @@ ModelParams = dict(
     tool_mask = 'use',#'use', #'use'(default) 'inverse' 'nouse'
     load_cotrackerPnpPose = True,#True #False
 
+
+
+    #jj extend: misgs only
+    renderOnce = True,
+    compo_all_gs_ordered_renderonce = ['tissue','obj_tool1'],
+    remain_redundant_default_param = True,
+    sepearte_render_n_save = True,
+
+    #jj extend: shared
+    # eval_n_log_test_cam = False,
+    eval_n_log_test_cam = True,
+    use_ema_train = False,
+    use_ema_test = False,
+
+    dbg_print = False,    
+    # dbg_vis_render = True,
+    dbg_vis_adc = False,
+    
+    tool_mask_loss_src = [],
+    tissue_mask_loss_src = ['depth','color'],
+
+    # tissue_mask_loss_src = ['color'],
+    # tissue_mask_loss_src = ['depth'],
+    # tool_mask_loss_src = ['color'],
+
+
 )
 
 #to do 
@@ -79,10 +105,13 @@ ModelHiddenParams = dict(
     init_param = 0.01, )
 
 
-# PipelineParams = dict(
-#     save_iterations = [0,3000], 
+PipelineParams = dict(
+    # save_iterations = [0,3000], 
+    # control render for train and offlne render
+    # dbg_vis_render = True,
+    dbg_vis_render = False,
     
-#     )
+    )
 
 
 # class PipelineParams(ParamGroup):

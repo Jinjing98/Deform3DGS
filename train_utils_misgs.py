@@ -51,30 +51,38 @@ except ImportError:
 # def training_misgsmodel(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, expname, extra_mark):
 def training_misgsmodel(args,
                         # use_streetgs_render = False,
-                        eval_n_log_test_cam =False):
-    #///////////////////////////////////////
-    #hard code
-    renderOnce = False
-    renderOnce = True  
-    compo_all_gs_ordered_renderonce=['tissue','obj_tool1']
-    # compo_all_gs_ordered_renderonce=['tissue']
-    # compo_all_gs_ordered_renderonce=['obj_tool1']
-
-    # log tb
-    # use_ema_train = True # recommeded
-    use_ema_train = False # has its advantage
-    use_ema_test = False # the only choice for test
+                        # eval_n_log_test_cam =False,
+                        ):
     
-    other_param_dict = None
-    dbg_print = True
-    dbg_print = False
-    remain_redundant = True
+
+
+    dbg_print = args.dbg_print
+    remain_redundant_default_param = args.remain_redundant_default_param
+
+
+    #///////////////////////////////////////
+    # #hard code
+    # renderOnce = False
+    # renderOnce = True  
+    # compo_all_gs_ordered_renderonce=['tissue','obj_tool1']
+    # # compo_all_gs_ordered_renderonce=['tissue']
+    # # compo_all_gs_ordered_renderonce=['obj_tool1']
+
+    # # log tb
+    # # use_ema_train = True # recommeded
+    # use_ema_train = False # has its advantage
+    # use_ema_test = False # the only choice for test
+    
+    # other_param_dict = None
+    # dbg_print = True
+    # dbg_print = False
+    # remain_redundant_default_param = True
     #///////////////////////////////////////
 
     # # have to use streetgs cam model
     from config.argsgroup2cn import perform_args2cfg
     cfg, others = perform_args2cfg(args,
-                                    remain_redundant = remain_redundant,
+                                    remain_redundant = remain_redundant_default_param,
                                     dbg_print = dbg_print,
                                     )
     eval_stree_param,train_stree_param,opt_stree_param,\
@@ -108,12 +116,13 @@ def training_misgsmodel(args,
     scene_reconstruction_misgs(cfg = cfg, controller = controller,
                                scene = scene, tb_writer = tb_writer,
                                render_stree_param_for_ori_train_report = render_stree_param,
+
                                 # use_streetgs_render = use_streetgs_render,
-                                eval_n_log_test_cam = eval_n_log_test_cam,  
-                                renderOnce=renderOnce,
-                                compo_all_gs_ordered_renderonce=compo_all_gs_ordered_renderonce,
-                                use_ema_train=use_ema_train,
-                                use_ema_test=use_ema_test,
+                                # eval_n_log_test_cam = eval_n_log_test_cam,  
+                                # renderOnce=renderOnce,
+                                # compo_all_gs_ordered_renderonce=compo_all_gs_ordered_renderonce,
+                                # use_ema_train=use_ema_train,
+                                # use_ema_test=use_ema_test,
                                )
 
 
@@ -174,6 +183,9 @@ def render_misgs_n_compute_loss(controller,viewpoint_cam,cfg,training_args,optim
                                 debug_getxyz_misgs,
                                 iteration,
                                 skip_loss_compute = False):
+    '''
+    shared to use by train and test during training
+    '''
     # viewpoint_cam: Camera = viewpoint_stack.pop(randint(0, len(viewpoint_stack) - 1))
     gt_image = viewpoint_cam.original_image.cuda()
     gt_depth = viewpoint_cam.original_depth.cuda()
@@ -214,56 +226,43 @@ def render_misgs_n_compute_loss(controller,viewpoint_cam,cfg,training_args,optim
                                     misgs_model=controller,
                                     single_compo_or_list=compo_all_gs_ordered,
                                     tool_parse_cam_again = True,#1st time
+                                    vis_img_debug = cfg.render.dbg_vis_render,
+
                                     )
         # get the dict below     
         image_all = render_pkg_all["render"]
         depth_all = render_pkg_all["depth"]
+
+        Ll1_tissue = torch.tensor(0.).cuda()
+        Ll1_tool = torch.tensor(0.).cuda()
+        depth_loss_tissue = torch.tensor(0.).cuda()
+        depth_loss_tool = torch.tensor(0.).cuda()
         if not skip_loss_compute:
-            Ll1 = l1_loss(image_all, gt_image, tissue_mask)
-            #scalar_dict['l1_loss'] = Ll1.item()
-            # loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + \
-                # optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), \
-                                                    # gt_image.to(torch.double), mask=tissue_mask))
-            loss = Ll1
 
-            Ll1_tool = l1_loss(image_all, gt_image, tool_mask)
-            #scalar_dict['l1_tool_loss'] = Ll1_tool.item()
-            # tool_loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1_tool \
-                # + optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), gt_image.to(torch.double), \
-                                                        # mask=tool_mask))
-            tool_loss = Ll1_tool
-            # more recommended than edit order list
-            loss += tool_loss
-            # loss = 0*loss+tool_loss
-            # loss = loss+tool_loss*0
-
-
-            #//////////////////////////////////
-            # remain tissue depth supervsion
-            use_tissue_depth = True
-            use_tool_depth = True
-            # seems not much difference?
-            use_tissue_depth = False
-            use_tool_depth = False
             depth_all = depth_all.unsqueeze(0)
             gt_depth = gt_depth.unsqueeze(0)
-            if (gt_depth!=0).sum() < 10:
-                assert 0
-                depth_loss = torch.tensor(0.).cuda()
-            else:
-                # inverse depth before compute loss
-                depth_all[depth_all!=0] = 1 / depth_all[depth_all!=0]
-                gt_depth[gt_depth!=0] = 1 / gt_depth[gt_depth!=0]
-                depth_loss = torch.tensor(0.).cuda()
-                if use_tissue_depth:
-                    depth_loss += l1_loss(depth_all, gt_depth, tissue_mask)
-                if use_tool_depth:
-                    depth_loss += l1_loss(depth_all, gt_depth, tool_mask)
-            loss += depth_loss
-            # loss = depth_loss
-            #//////////////////////////////////
+            depth_all[depth_all!=0] = 1 / depth_all[depth_all!=0]
+            gt_depth[gt_depth!=0] = 1 / gt_depth[gt_depth!=0]
+            if 'color' in cfg.model.tissue_mask_loss_src:
+                Ll1_tissue = l1_loss(image_all, gt_image, tissue_mask)
+            if 'depth' in cfg.model.tissue_mask_loss_src:
+                if (gt_depth!=0).sum() >= 10:
+                    depth_loss_tissue = l1_loss(depth_all, gt_depth, tissue_mask)
+                #scalar_dict['l1_loss'] = Ll1.item()
+                # loss = (1.0 - optim_args.lambda_dssim) * optim_args.lambda_l1 * Ll1 + \
+                    # optim_args.lambda_dssim * (1.0 - ssim(image_all.to(torch.double), \
+                                                        # gt_image.to(torch.double), mask=tissue_mask))
+            # loss = Ll1
+            if 'color' in cfg.model.tool_mask_loss_src:
+                Ll1_tool = l1_loss(image_all, gt_image, tool_mask)
+            if 'depth' in cfg.model.tool_mask_loss_src:
+                if (gt_depth!=0).sum() >= 10:
+                    depth_loss_tool = l1_loss(depth_all, gt_depth, tool_mask)
+            # #//////////////////////////////////
 
-
+        Ll1 = Ll1_tissue+Ll1_tool
+        depth_loss = depth_loss_tissue+depth_loss_tool
+        loss = Ll1 + depth_loss 
 
         for model_name,(start_idx,end_idx) in compo_all_gs_ordered_idx.items():
                 model_names_all_compo_adc.append(model_name)
@@ -281,6 +280,8 @@ def render_misgs_n_compute_loss(controller,viewpoint_cam,cfg,training_args,optim
             render_pkg_tissue,_ = fdm_render(viewpoint_cam, controller.tissue, cfg.render, background,
                                             single_compo_or_list='tissue',
                                             tool_parse_cam_again = False,# no need for tissue
+                                            vis_img_debug = cfg.render.dbg_vis_render,
+
                                             )
             image_tissue, depth_tissue, viewspace_point_tensor_tissue, visibility_filter_tissue, radii_tissue = \
                 render_pkg_tissue["render"], render_pkg_tissue["depth"], render_pkg_tissue["viewspace_points"], \
@@ -311,6 +312,8 @@ def render_misgs_n_compute_loss(controller,viewpoint_cam,cfg,training_args,optim
                                         misgs_model=controller,
                                         single_compo_or_list='tool',
                                         tool_parse_cam_again = True,#1st time
+                                        vis_img_debug = cfg.render.dbg_vis_render,
+
                                         )
             image_tool, depth_tool, viewspace_point_tensor_tool, visibility_filter_tool, radii_tool = \
                 render_pkg_tool["render"], render_pkg_tool["depth"], render_pkg_tool["viewspace_points"], \
@@ -348,12 +351,12 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                             #    use_streetgs_render = False,
                                debug_getxyz_misgs = True,
                             #    debug_getxyz_misgs = False,
-                               eval_n_log_test_cam = False,
-                                renderOnce = True,
-                                compo_all_gs_ordered_renderonce=['tissue','obj_tool1'],
-                                # use_ema_train = True # recommeded,
-                                use_ema_train = False,
-                                use_ema_test = False, # the only choice for test
+                            #    eval_n_log_test_cam = False,
+                            #     renderOnce = True,
+                            #     compo_all_gs_ordered_renderonce=['tissue','obj_tool1'],
+                            #     # use_ema_train = True # recommeded,
+                            #     use_ema_train = False,
+                            #     use_ema_test = False, # the only choice for test
                                ):
     
     print('/////////////************/////////////')
@@ -362,6 +365,7 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
     training_args = cfg.train
     optim_args = cfg.optim
     data_args = cfg.data
+    model_args = cfg.model
     start_iter = 0
     controller.training_setup()
     try:
@@ -371,6 +375,12 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
     print(f'Starting from {start_iter}')
     from config.argsgroup2cn import save_cfg
     save_cfg(cfg, cfg.model_path, epoch=start_iter)
+
+    eval_n_log_test_cam = model_args.eval_n_log_test_cam
+    renderOnce = model_args.renderOnce
+    compo_all_gs_ordered_renderonce = model_args.compo_all_gs_ordered_renderonce
+    use_ema_train = model_args.use_ema_train
+    use_ema_test = model_args.use_ema_test
 
     # from render_misgs import MisGaussianRenderer
     # gaussians_renderer = MisGaussianRenderer(cfg=cfg)
@@ -587,9 +597,8 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
 
 
-        is_save_images = True
-        # if is_save_images and (iteration % 1000 == 0):
-        if is_save_images \
+        # if sepearte_render_n_save and (iteration % 1000 == 0):
+        if model_args.sepearte_render_n_save \
             and (iteration % 10 == 0)\
             and iteration > int(0.9*training_args.iterations)\
                 :
@@ -615,6 +624,7 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                             render_pkg,_= fdm_render(viewpoint_cam, sub_gs_model, cfg.render, background,
                                                      single_compo_or_list='tissue',
                                                      tool_parse_cam_again = False,#no need for tissue 
+                                                     vis_img_debug = cfg.render.dbg_vis_render,
                                                      )
                         except:
                             assert 'tool' in model_name
@@ -623,8 +633,8 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
                                                     misgs_model = controller,
                                                     single_compo_or_list='tool',
                                                     tool_parse_cam_again = False,#no need again 
+                                                    vis_img_debug = cfg.render.dbg_vis_render,
                                                     )
-
                         image_obj, depth_obj = render_pkg["render"], render_pkg['depth']
 
                         depth_obj = depth_obj.repeat(3, 1, 1).to(image_obj.device) 

@@ -84,8 +84,12 @@ def compute_more_metrics_for_all_cams(image_tensor,gt_image_tensor,
     return  more_to_log,ema_psnr_for_log_tissue,ema_psnr_for_log_tool
     #///////////////////////////////////////////////////
 
-def render_viewpoint_cams(viewpoint_cams,gaussians, pipe, background):
-
+def render_viewpoint_cams(viewpoint_cams,gaussians, pipe, background,
+                          dbg_vis_render = False,
+                          ):
+    '''
+    use for training
+    '''
     images = []
     depths = []
     gt_images = []
@@ -102,7 +106,11 @@ def render_viewpoint_cams(viewpoint_cams,gaussians, pipe, background):
         assert len(viewpoint_cams)==1
         viewpoint_cam = viewpoint_cams[0]
         render_pkg,_ = fdm_render(viewpoint_cam, gaussians, pipe, background,
-                            single_compo_or_list='tissue')
+                            single_compo_or_list='tissue',
+                            vis_img_debug = dbg_vis_render,
+                            
+                            
+                            )
         image, depth, viewspace_point_tensor, visibility_filter, radii = \
             render_pkg["render"], render_pkg["depth"], render_pkg["viewspace_points"], render_pkg["visibility_filter"], render_pkg["radii"]
         gt_image = viewpoint_cam.original_image.cuda().float()
@@ -137,11 +145,16 @@ def render_viewpoint_cams(viewpoint_cams,gaussians, pipe, background):
 def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_iterations, 
                          checkpoint_iterations, checkpoint, debug_from,
                          gaussians, scene, tb_writer, train_iter, timer,
-                         eval_n_log_test_cam = False,
-                         use_ema_train=False,
-                         use_ema_test=False,                         
+                        #  eval_n_log_test_cam = False,
+                        #  use_ema_train=False,
+                        #  use_ema_test=False,                         
                     
                          ):
+    
+    eval_n_log_test_cam = dataset.eval_n_log_test_cam
+    use_ema_test=dataset.use_ema_test
+    use_ema_train=dataset.use_ema_train
+
     first_iter = 0
     gaussians.training_setup(opt)
     if checkpoint:
@@ -175,6 +188,7 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
     ema_psnr_for_log_tissue_test = 0.0
     ema_psnr_for_log_tool_test = 0.0
 
+
     for iteration in range(first_iter, final_iter+1):        
         iter_start.record()
         gaussians.update_learning_rate(iteration)
@@ -193,22 +207,28 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
         # render 
         assert len(viewpoint_cams)==1
         image_tensor,depth_tensor,gt_image_tensor,gt_depth_tensor,mask_tensor,mask_tissue_dbg_tensor,\
-            viewspace_point_tensor_list,radii, visibility_filter = render_viewpoint_cams(viewpoint_cams,gaussians, pipe, background)
+            viewspace_point_tensor_list,radii, visibility_filter = render_viewpoint_cams(viewpoint_cams,gaussians, pipe, background,
+                                                                                         dbg_vis_render = pipe.dbg_vis_render,
+                                                                                         )
+        # ////////////////////////////////////////////////////
+        Ll1_tissue = torch.tensor(0.).cuda()
+        depth_loss_tissue = torch.tensor(0.).cuda()
+        if 'color' in dataset.tissue_mask_loss_src:
+            Ll1_tissue = l1_loss(image_tensor, gt_image_tensor, mask_tensor)
+
+        if 'depth' in dataset.tissue_mask_loss_src:
+            if (gt_depth_tensor!=0).sum() >= 10:
+                depth_tensor[depth_tensor!=0] = 1 / depth_tensor[depth_tensor!=0]
+                gt_depth_tensor[gt_depth_tensor!=0] = 1 / gt_depth_tensor[gt_depth_tensor!=0]
+        
+                depth_loss_tissue = l1_loss(depth_tensor, gt_depth_tensor, mask_tensor)
+        Ll1 = Ll1_tissue
+        depth_loss = depth_loss_tissue
+        # ////////////////////////////////////////////////////
 
 
-        Ll1 = l1_loss(image_tensor, gt_image_tensor, mask_tensor)
-        
-        if (gt_depth_tensor!=0).sum() < 10:
-            depth_loss = torch.tensor(0.).cuda()
-        else:
-            depth_tensor[depth_tensor!=0] = 1 / depth_tensor[depth_tensor!=0]
-            gt_depth_tensor[gt_depth_tensor!=0] = 1 / gt_depth_tensor[gt_depth_tensor!=0]
-     
-            depth_loss = l1_loss(depth_tensor, gt_depth_tensor, mask_tensor)
-        
         loss = Ll1 + depth_loss 
         loss.backward()
-
         # viewspace_point_tensor_grad = torch.zeros_like(viewspace_point_tensor)
         viewspace_point_tensor_grad = torch.zeros_like(viewspace_point_tensor_list[-1])
         for idx in range(0, len(viewspace_point_tensor_list)):
@@ -241,7 +261,9 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
                 
                 assert len(test_viewpoint_cams)==1
                 test_image_tensor,test_depth_tensor,test_gt_image_tensor,test_gt_depth_tensor,test_mask_tensor,test_mask_tissue_dbg_tensor,\
-                    test_viewspace_point_tensor_list,test_radii,test_visibility_filter = render_viewpoint_cams(test_viewpoint_cams,gaussians, pipe, background)
+                    test_viewspace_point_tensor_list,test_radii,test_visibility_filter = render_viewpoint_cams(test_viewpoint_cams,gaussians, pipe, background,
+                                                                                                               dbg_vis_render = pipe.dbg_vis_render,
+                                                                                                               )
 
                 more_to_log,ema_psnr_for_log_tissue_test,ema_psnr_for_log_tool_test = compute_more_metrics_for_all_cams(test_image_tensor,test_gt_image_tensor,
                                                     test_mask_tensor,test_mask_tissue_dbg_tensor,
@@ -360,12 +382,9 @@ def scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_i
                 torch.save((gaussians.capture(), iteration), scene.model_path + "/chkpnt" + str(iteration) + ".pth")
 
 def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, checkpoint_iterations, checkpoint, debug_from, expname, extra_mark,args = None,
-             eval_n_log_test_cam = False):
+            #  eval_n_log_test_cam = False,
+             ):
 
-    use_ema_test=False
-    use_ema_train=False
-    # use_ema_train=True
-    # use_ema_test=True
 
     assert expname == args.model_path, f'{expname} {args.model_path}'
     tb_writer = prepare_output_and_logger(model_path=expname, write_args=args)
@@ -382,9 +401,9 @@ def training(dataset, hyper, opt, pipe, testing_iterations, saving_iterations, c
     scene_reconstruction(dataset, opt, hyper, pipe, testing_iterations, saving_iterations,
                          checkpoint_iterations, checkpoint, debug_from,
                          gaussians, scene, tb_writer, opt.iterations,timer,
-                         eval_n_log_test_cam = eval_n_log_test_cam,
-                         use_ema_train=use_ema_train,
-                         use_ema_test=use_ema_test,  
+                        #  eval_n_log_test_cam = eval_n_log_test_cam,
+                        #  use_ema_train=use_ema_train,
+                        #  use_ema_test=use_ema_test,  
                          )
 
 def prepare_output_and_logger(model_path,write_args = None):  
@@ -488,20 +507,7 @@ if __name__ == "__main__":
     torch.cuda.empty_cache()
 
     use_stree_grouping_strategy = True
-    use_stree_grouping_strategy = False
-    if use_stree_grouping_strategy:
-        # use_streetgs_render = True #fail  potential to replace renderonce?
-        # use_streetgs_render = False
-        tool_mask_loss_src = ['depth','color']
-        tissue_mask_loss_src = ['depth','color']
-    else:
-        # deform3dgs setting
-        tool_mask_loss_src = []
-        tissue_mask_loss_src = ['depth','color']
-    #misgs hard code
-    eval_n_log_test_cam = False
-    eval_n_log_test_cam = True
-
+    # use_stree_grouping_strategy = False
 
     parser = ArgumentParser(description="Training script parameters")
     setup_seed(6666)
@@ -528,6 +534,7 @@ if __name__ == "__main__":
         config = mmcv.Config.fromfile(args.configs)
         args = merge_hparams(args, config)
         #/////////////////////////////////////
+        # fmt name and sanity
         #update with tool_info automatically
         mask_append = ''
         optim_append = ''
@@ -537,15 +544,21 @@ if __name__ == "__main__":
             assert args.tool_mask == 'use',f' for misgs,we let tool_mask be use n get all masks'
             #pose related setting
             optim_append += f'_{args.track_warmup_steps}_extent{args.camera_extent}_space{args.obj_pose_rot_optim_space}_{args.obj_pose_init}init'
+            for loss_term in args.tissue_mask_loss_src:
+                assert loss_term in ['depth','color']
+            for loss_term in args.tissue_mask_loss_src:
+                assert loss_term in ['depth','color']
         else:
             # set up exclusive for deform3dgs
-            pass
+            assert args.tool_mask_loss_src == []
+            # assert args.tissue_mask_loss_src == ['depth','color']
+
         # shared by both
         if hasattr(args,'tool_mask'):
             mask_append += f'_{args.tool_mask}'
         if hasattr(args,'init_mode'):
             mask_append += f'_{args.init_mode}'
-        loss_append = ''
+        loss_append = f'_Tissue{"".join(args.tissue_mask_loss_src)}_Tool{"".join(args.tool_mask_loss_src)}'
         #/////////////////////////////////////
 
 
@@ -577,7 +590,7 @@ if __name__ == "__main__":
             args.save_iterations, args.checkpoint_iterations, args.start_checkpoint, args.debug_from, args.expname, 
             extra_mark=args.extra_mark,
             args = args,
-            eval_n_log_test_cam = eval_n_log_test_cam,
+            # eval_n_log_test_cam = eval_n_log_test_cam,
             
             )
     else:
@@ -600,7 +613,7 @@ if __name__ == "__main__":
         from train_utils_misgs import training_misgsmodel
         training_misgsmodel(args, 
                             # use_streetgs_render = use_streetgs_render,
-                                eval_n_log_test_cam = eval_n_log_test_cam,
+                                # eval_n_log_test_cam = eval_n_log_test_cam,
                             )
     # All done
     print("\nTraining complete.", args.model_path)

@@ -257,8 +257,6 @@ class ModParams(ParamGroup_stree):
         self.fdm.curve_num = 17
         self.fdm.init_param = 0.01
 
-
-
         self.tool_mask = None#'use'
         self.init_mode = None#'use'
         self.model_path = None
@@ -266,8 +264,25 @@ class ModParams(ParamGroup_stree):
         self.extra_mark = None
 
         self.camera_extent = None
-
         self.load_cotrackerPnpPose = False
+
+        #jj extend: misgs only
+        self.renderOnce = True
+        self.compo_all_gs_ordered_renderonce = ['tissue','obj_tool1']
+        self.remain_redundant_default_param = True
+        self.sepearte_render_n_save = True
+
+        #jj extend: shared
+        self.eval_n_log_test_cam = False
+        self.use_ema_train = False
+        self.use_ema_test = False
+        self.dbg_print = False
+        # self.dbg_vis_render = False
+        self.dbg_vis_adc = False
+        self.tool_mask_loss_src = []
+        self.tissue_mask_loss_src = ['depth','color']
+
+
 
         super().__init__(parser, "Model Parameters")
  
@@ -315,6 +330,11 @@ class RenderParams(ParamGroup_stree):
         self.save_image = True
         self.coord = 'world' # ['world', 'vehicle']
         self.concat_cameras = []
+
+        # jj extend in pipe
+        self.dbg_vis_render = False
+
+
         super().__init__(parser, "Render Parameters")
 
 class ViewerParams(ParamGroup_stree):
@@ -346,5 +366,8 @@ OTHER_PARAM_DICT  = {
 
     # cmd added
     # "save_iterations": [3000],#[3000],
+
+
+    #extend in original pipe---not related to any
 }
 

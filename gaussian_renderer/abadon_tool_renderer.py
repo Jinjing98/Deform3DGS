@@ -24,6 +24,8 @@ def tool_render(viewpoint_camera,
                 override_color = None,
                 debug_getxyz_misgs = False,
                 misgs_model = None,
+                vis_img_debug = False,
+
                 ):
     assert 0, 'tmp disble tool render'
     """
@@ -127,7 +129,7 @@ def tool_render(viewpoint_camera,
     rendered_image_vis_tool = rendered_image.detach().to('cpu')
     
     from utils.scene_utils import vis_torch_img
-    vis_img_debug = False
+    # vis_img_debug = False
     # vis_img_debug = True
     if vis_img_debug:
         vis_torch_img(rendered_image=rendered_image,topic = 'tool_alone_render(the func has been incorparated in our dfm_render,remain it for debug)')

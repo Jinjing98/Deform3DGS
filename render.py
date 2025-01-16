@@ -33,13 +33,19 @@ to8b = lambda x : (255*np.clip(x.cpu().numpy(),0,1)).astype(np.uint8)
 
 def fdm_render_offline(view, gaussians, pipeline, background,
                         controller=None, misgs_cfg=None,
-                        offline_target='tissue'):
+                        offline_target='tissue',
+                        ):
     '''
+    offline render func: call base fdm_render
+
+    render 1 img for either certain gs model or misgs controoler
+    support offline_target to be a list to render as a whole
     use controller None or not to decide which way'''
     if controller==None:    
         assert offline_target == 'tissue'
         rendering,_ = fdm_render(view, gaussians, pipeline, background,
                     single_compo_or_list=offline_target,
+                    vis_img_debug = pipeline.dbg_vis_render,
                     )
     # elif offline_target == 'tool':
     else:
@@ -74,6 +80,7 @@ def fdm_render_offline(view, gaussians, pipeline, background,
                                 debug_getxyz_misgs = True,
                                 misgs_model = controller,
                                 single_compo_or_list=offline_target,
+                                vis_img_debug = pipeline.dbg_vis_render,
                                 )
     # elif offline_target == 'list':
     #     rendering,_ = fdm_render(view, gaussians, pipeline, background,
@@ -308,27 +315,36 @@ if __name__ == "__main__":
     parser.add_argument("--reconstruct_test", action="store_true")
     parser.add_argument("--reconstruct_video", action="store_true")
     parser.add_argument("--configs", type=str)
-    args = get_combined_args(parser)
+    # it will load the cfg_args saving the args when train
+    args = get_combined_args(parser,insist=True)
     print("Rendering ", args.model_path)
+
+    #/////////////////////////////////////////////
+    # hard code
+    # still use the pipeline param to control render process: vis render img or not
     render_with_misgs = False
-    render_with_misgs = True
+    # render_with_misgs = True
+    if render_with_misgs:
+        offline_target='tissue'
+        # offline_target='tool'
+        # offline_target=['tissue','obj_tool1']
 
-    # offline_target='tissue'
-    offline_target='tool'
-    # offline_target=['tissue','obj_tool1']
+
+    # update the pipe params with the current ones saved in the config file
+    # after all, offline render does not need much param
+    # if args.configs:
+    #     import mmcv
+    #     from utils.params_utils import merge_hparams
+    #     config = mmcv.Config.fromfile(args.configs)
+    #     args = merge_hparams(args, config)
 
 
-    # exp_time_args_file_name = 'exp_default.py'
-    # if exp_time_args_file_name not in args.configs:
-    #     print('Wrong config, update with exp-time snapshot...')
-    #     args.configs = os.path.join(args.model_path,exp_time_args_file_name)
-    #     assert os.path.exists(args.configs),f'not saved args during traing? {args.configs}'
+    # hard conveninet chaneg
+    args.dbg_vis_render = True
 
-    if args.configs:
-        import mmcv
-        from utils.params_utils import merge_hparams
-        config = mmcv.Config.fromfile(args.configs)
-        args = merge_hparams(args, config)
+    #//////////////////////////////////////////////////////////
+
+
     # Initialize system state (RNG)
     safe_state(args.quiet)
     if not render_with_misgs:
