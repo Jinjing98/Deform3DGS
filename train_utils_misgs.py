@@ -518,7 +518,8 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
             # todo:xyz_gradient_accum
             # problem lies in fusing set_max_radii2D_all_models and add_densification_stats_all_models of misgs model with its own function
             # also check out where else can leverage the idx dict properly
-            # Densification
+            # Densification n prune
+            # densify n prune until iter
             if iteration < optim_args.densify_until_iter :
                 # Keep track of max radii in image-space for pruning
                 controller.set_visibility(include_list=list(set(controller.model_name_id.keys()) ))
@@ -597,8 +598,8 @@ def scene_reconstruction_misgs(cfg, controller, scene, tb_writer,
 
 
 
-        # if sepearte_render_n_save and (iteration % 1000 == 0):
-        if model_args.sepearte_render_n_save \
+        # if trn_render_again_n_save and (iteration % 1000 == 0):
+        if model_args.trn_render_again_n_save \
             and (iteration % 10 == 0)\
             and iteration > int(0.9*training_args.iterations)\
                 :

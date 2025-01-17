@@ -68,7 +68,7 @@ class ModelParams(ParamGroup):
         self.renderOnce = True
         self.compo_all_gs_ordered_renderonce = ['tissue','obj_tool1']
         self.remain_redundant_default_param = True
-        self.sepearte_render_n_save = True
+        self.trn_render_again_n_save = True
         
         #jj extend: shared
         self.eval_n_log_test_cam = False
@@ -164,6 +164,7 @@ class OptimizationParams(ParamGroup):
         self.obj_pose_rot_optim_space = 'rpy' #'lie'
 
         self._disable_tb = 'N'#such manner support change the args from terminal input
+        self._add_debug = 'N'#such manner support change the args from terminal input
 
         super().__init__(parser, "Optimization Parameters")
 

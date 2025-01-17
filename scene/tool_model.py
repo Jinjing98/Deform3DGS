@@ -573,7 +573,8 @@ class ToolModel:
         K = None,
         box_6d_motion = None, #learned
         skip_densify = False, 
-        skip_prune = False
+        skip_prune = False,
+        dbg_vis_tool_adc = False,
         ):
         device_name = self.get_xyz.device
         init_tool_mask = init_tool_mask.to(device_name)#.squeeze(0)
@@ -645,8 +646,7 @@ class ToolModel:
                                                             tool_mask = tool_mask,
                                                             K = K.to(device_name),
                                                             num_gaussians = num_gaussians,
-                                                            # vis_debug=True,
-                                                               vis_debug=False,
+                                                            dbg_vis_tool_adc = dbg_vis_tool_adc,
                                                             )
             # self.min_xyz_init, self.max_xyz_init
             points_outside_box = torch.logical_not(points_inside_init_6d_range)           

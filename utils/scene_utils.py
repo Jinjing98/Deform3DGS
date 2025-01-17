@@ -93,7 +93,8 @@ def visualize_and_save_point_cloud(point_cloud, R, T, filename):
     plt.savefig(filename)
 
 def check_within_2D_mask(samples_xyz_in_cam,tool_mask,K,num_gaussians,
-                            vis_debug = False):
+                            dbg_vis_tool_adc = False,
+                            ):
     '''
     samples_xyz: num,3
     mask: h w
@@ -115,7 +116,7 @@ def check_within_2D_mask(samples_xyz_in_cam,tool_mask,K,num_gaussians,
     # rows, cols = proj_2d[:, 0], proj_2d[:, 1]
     cols, rows = proj_2d[:, 0], proj_2d[:, 1]
     #///////////////////////////            
-    if vis_debug:
+    if dbg_vis_tool_adc:
         import cv2
         # Convert the binary mask to a uint8 image (required by OpenCV)
         binary_mask_np = (tool_mask.cpu().numpy() * 255).astype(np.uint8)

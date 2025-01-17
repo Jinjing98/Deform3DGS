@@ -22,7 +22,7 @@ ModelParams = dict(
     renderOnce = True,
     compo_all_gs_ordered_renderonce = ['tissue','obj_tool1'],
     remain_redundant_default_param = True,
-    sepearte_render_n_save = True,
+    trn_render_again_n_save = False, #True #False # use to monitor training process
 
     #jj extend: shared
     # eval_n_log_test_cam = False,
@@ -31,17 +31,18 @@ ModelParams = dict(
     use_ema_test = False,
 
     dbg_print = False,    
-    # dbg_vis_render = True,
-    dbg_vis_adc = False,
+    dbg_vis_adc = False,#True
     
-    tool_mask_loss_src = [],
+    # tool_mask_loss_src = [],
+    # tissue_mask_loss_src = ['depth','color'],
+
     tissue_mask_loss_src = ['depth','color'],
+    tool_mask_loss_src = ['depth','color'],
+
 
     # tissue_mask_loss_src = ['color'],
     # tissue_mask_loss_src = ['depth'],
     # tool_mask_loss_src = ['color'],
-
-
 )
 
 #to do 
@@ -59,9 +60,9 @@ OptimizationParams = dict(
     position_lr_max_steps = 4000,
     # prune_interval = 3000, #? wrong-not-used?
 
-    #jj
-    densification_interval = 100,
-    densify_from_iter = 500,
+    #jj---ADD MORE HARD FOT TOOLL
+    densification_interval = 100, #100
+    densify_from_iter = 500,#500
     # densify_until_iter = -1,#700,#15_000, #-1 means no densify
     densify_until_iter = 700,#15_000,
     densify_grad_threshold_coarse = 0.0002,

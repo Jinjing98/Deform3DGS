@@ -192,6 +192,8 @@ class OptParams(ParamGroup_stree):
         self.obj_pose_init = '0'
         self.obj_pose_rot_optim_space = 'rpy' #'lie'
         self._disable_tb = 'N'#False
+        self._add_debug = 'N'#such manner support change the args from terminal input
+
 
         # self.densify_grad_threshold_obj = 0.0002
 
@@ -270,7 +272,7 @@ class ModParams(ParamGroup_stree):
         self.renderOnce = True
         self.compo_all_gs_ordered_renderonce = ['tissue','obj_tool1']
         self.remain_redundant_default_param = True
-        self.sepearte_render_n_save = True
+        self.trn_render_again_n_save = True
 
         #jj extend: shared
         self.eval_n_log_test_cam = False

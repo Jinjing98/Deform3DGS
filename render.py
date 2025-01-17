@@ -341,7 +341,7 @@ if __name__ == "__main__":
 
     # hard conveninet chaneg
     args.dbg_vis_render = True
-
+    print('!!! Hard chagnge offline render vis flag to debug...')
     #//////////////////////////////////////////////////////////
 
 

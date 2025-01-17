@@ -565,8 +565,11 @@ if __name__ == "__main__":
 
         expname_append = f'{mask_append}{optim_append}{loss_append}'        
         assert args.disable_tb in ['Y','N']
+        assert args.add_debug in ['Y','N']
         if args.disable_tb == 'Y':
             expname_append += '_NOTB'
+        if args.add_debug == 'Y':
+            expname_append += '_DBG'
         setattr(args, 'expname', f'{args.expname}{expname_append}')
         if 'pulling' in args.source_path or 'cutting' in args.source_path:
             pass
